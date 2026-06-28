@@ -8,9 +8,10 @@
   ██║     ██║  ██║██║██║ ╚═╝ ██║███████╗
   ╚═╝     ╚═╝  ╚═╝╚═╝╚═╝     ╚═╝╚══════╝
 
-  PRIME TOOL v4.0.1 — Multi-Tool Terminal UPGRADED (Corrected)
-  Nouveautés : Thèmes, Traceroute, Whois, QR ASCII, Convertisseur,
-               Processus suspects, Speedtest, Historique commandes, UI améliorée.
+  PRIME TOOL v4.1.0 — Multi-Tool Terminal UPGRADED
+  Nouveautés v4.1.0 : Firewall Rules, SSH Audit, Watcher Logs,
+    Services Manager, Env Inspector, ARP Table, Net Connections,
+    File Hasher, Cron Inspector.
 """
 
 import os
@@ -58,7 +59,7 @@ console = Console(width=shutil.get_terminal_size().columns)
 
 # ── CONFIG ───────────────────────────────────────────────
 TOOL_NAME    = "PRIME"
-VERSION      = "v4.0.1"
+VERSION      = "v4.1.0"
 LANG         = "fr"
 CMD_HISTORY  = deque(maxlen=20)
 
@@ -112,7 +113,7 @@ def t(key: str) -> str:
     TEXTS = {
         "fr": {
             "c_sys": "SYSTÈME", "c_net": "RÉSEAU", "c_mon": "MONITORING",
-            "c_uti": "UTILITAIRES", "c_adv": "AVANCÉ",
+            "c_uti": "UTILITAIRES", "c_adv": "AVANCÉ", "c_new": "NOUVEAU v4.1",
             "sys1": "Info Système", "sys2": "Statut CPU", "sys3": "Info RAM",
             "sys4": "Info Disque", "sys5": "Uptime / Boot", "sys6": "Exporter Rapport",
             "net1": "Info Réseau", "net2": "Test Ping", "net3": "Stats Réseau",
@@ -122,13 +123,20 @@ def t(key: str) -> str:
             "uti4": "Outil Base64", "uti5": "Nettoyer Temp",
             "adv1": "Traceroute", "adv2": "Whois / GeoIP", "adv3": "QR Code ASCII",
             "adv4": "Convertisseur", "adv5": "Proc. Suspects", "adv6": "Speedtest",
+            # ── NOUVELLES FEATURES ──
+            "new1": "Firewall Rules",   "new2": "SSH Audit",
+            "new3": "Watcher Logs",     "new4": "Services Manager",
+            "new5": "Env Inspector",    "new6": "ARP Table",
+            "new7": "Net Connections",  "new8": "File Hasher",
+            "new9": "Cron Inspector",
+            # ───────────────────────
             "theme": "Changer Thème", "hist": "Historique", "lang": "Langue (FR/EN)",
             "quit": "[ QUITTER ]", "prompt": "  ❯ ", "bye": "À plus !",
             "err": "Choix invalide.", "pause": "  ↵ Entrée pour continuer..."
         },
         "en": {
             "c_sys": "SYSTEM", "c_net": "NETWORK", "c_mon": "MONITORING",
-            "c_uti": "UTILITIES", "c_adv": "ADVANCED",
+            "c_uti": "UTILITIES", "c_adv": "ADVANCED", "c_new": "NEW v4.1",
             "sys1": "System Info", "sys2": "CPU Status", "sys3": "RAM Info",
             "sys4": "Disk Info", "sys5": "Uptime / Boot", "sys6": "Export Report",
             "net1": "Network Info", "net2": "Ping Test", "net3": "Net Stats",
@@ -138,6 +146,11 @@ def t(key: str) -> str:
             "uti4": "Base64 Tool", "uti5": "Clean Temp",
             "adv1": "Traceroute", "adv2": "Whois / GeoIP", "adv3": "ASCII QR Code",
             "adv4": "Converter", "adv5": "Susp. Procs", "adv6": "Speedtest",
+            "new1": "Firewall Rules",   "new2": "SSH Audit",
+            "new3": "Log Watcher",      "new4": "Services Manager",
+            "new5": "Env Inspector",    "new6": "ARP Table",
+            "new7": "Net Connections",  "new8": "File Hasher",
+            "new9": "Cron Inspector",
             "theme": "Change Theme", "hist": "History", "lang": "Language (EN/FR)",
             "quit": "[ QUIT ]", "prompt": "  ❯ ", "bye": "See ya!",
             "err": "Invalid choice.", "pause": "  ↵ Press Enter to continue..."
@@ -182,6 +195,9 @@ def error(msg):
 
 def info(msg):
     console.print(f"  [{th()['secondary']}]ℹ {msg}[/{th()['secondary']}]")
+
+def warn(msg):
+    console.print(f"  [{th()['warning']}]⚠ {msg}[/{th()['warning']}]")
 
 # ── DÉCOR / BANNER ───────────────────────────────────────
 def _gradient_banner(ascii_logo: str):
@@ -251,6 +267,12 @@ def get_cats():
             ("24", t("adv4")), ("25", t("adv5")), ("26", t("adv6")),
             ("27", t("theme")), ("28", t("hist")), ("20", t("lang")), ("00", t("quit")),
         ]),
+        # ── NOUVELLE CATÉGORIE v4.1 ──
+        (t("c_new"), th()["primary"], [
+            ("29", t("new1")), ("30", t("new2")), ("31", t("new3")),
+            ("32", t("new4")), ("33", t("new5")), ("34", t("new6")),
+            ("35", t("new7")), ("36", t("new8")), ("37", t("new9")),
+        ]),
     ]
 
 def _make_panel(title: str, color: str, items: list) -> Panel:
@@ -279,6 +301,10 @@ def draw_menu() -> str:
 
     console.print(Align.center(f"[{dim}]{'· ' * 20}[/{dim}]"))
     console.print(Align.center(_make_panel(*cats[4])))
+
+    # Panneau des nouvelles features
+    console.print(Align.center(f"[{pri}]{'★ ' * 20}[/{pri}]"))
+    console.print(Align.center(_make_panel(*cats[5])))
     console.print()
 
     raw = console.input(f"[bold {pri}]{t('prompt')}[/bold {pri}]").strip()
@@ -299,7 +325,7 @@ def _color_for(choice: str) -> tuple:
     return choice, th()["primary"]
 
 # ═══════════════════════════════════════════════════════
-#  FEATURES SYSTÈME
+#  FEATURES SYSTÈME (inchangées)
 # ═══════════════════════════════════════════════════════
 
 def toggle_lang():
@@ -333,7 +359,6 @@ def cpu_info():
     temps  = {}
     try: temps = psutil.sensors_temperatures()
     except Exception: pass
-    
     col = th()["cat_sys"]
     t_ui = themed_table(border_style=col)
     t_ui.add_column("", style=col, width=20)
@@ -444,7 +469,7 @@ def export_sys():
         error(f"Erreur export : {e}")
 
 # ═══════════════════════════════════════════════════════
-#  FEATURES RÉSEAU
+#  FEATURES RÉSEAU (inchangées)
 # ═══════════════════════════════════════════════════════
 
 def network_info():
@@ -457,7 +482,9 @@ def network_info():
         req = urllib.request.Request("https://ipinfo.io/json", headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=4) as resp:
             data = json.loads(resp.read().decode())
-            pub_ip, geo_loc, org = data.get("ip", "?"), f"{data.get('city','?')}, {data.get('region','?')}, {data.get('country','?')}", data.get("org", "?")
+            pub_ip  = data.get("ip", "?")
+            geo_loc = f"{data.get('city','?')}, {data.get('region','?')}, {data.get('country','?')}"
+            org     = data.get("org", "?")
     except Exception: pass
 
     net = psutil.net_io_counters()
@@ -532,7 +559,9 @@ def port_checker():
     col   = th()["cat_net"]
     host  = console.input(f"[{col}]  Host [dim](default: localhost)[/dim] ❯ [/{col}]").strip() or "localhost"
     raw   = console.input(f"[{col}]  Ports [dim](ex: 80,443,8080 ou vide=communs)[/dim] ❯ [/{col}]").strip()
-    known = { 21:"FTP", 22:"SSH", 23:"Telnet", 25:"SMTP", 53:"DNS", 80:"HTTP", 110:"POP3", 143:"IMAP", 443:"HTTPS", 3306:"MySQL", 3389:"RDP", 5432:"PgSQL", 8080:"HTTP-Alt", 27017:"MongoDB" }
+    known = { 21:"FTP", 22:"SSH", 23:"Telnet", 25:"SMTP", 53:"DNS", 80:"HTTP",
+              110:"POP3", 143:"IMAP", 443:"HTTPS", 3306:"MySQL", 3389:"RDP",
+              5432:"PgSQL", 8080:"HTTP-Alt", 27017:"MongoDB" }
     ports = ([int(p) for p in raw.split(",") if p.strip().isdigit()] if raw else list(known.keys()))
     t_ui = themed_table(border_style=col)
     t_ui.add_column("Port", style=col, width=8)
@@ -595,7 +624,7 @@ def scan_lan():
     console.print(f"\n[{th()['primary']}]Terminé. {len(active_ips)} hôte(s) trouvé(s).[/{th()['primary']}]")
 
 # ═══════════════════════════════════════════════════════
-#  FEATURES MONITORING
+#  FEATURES MONITORING (inchangées)
 # ═══════════════════════════════════════════════════════
 
 def live_monitor():
@@ -612,7 +641,8 @@ def live_monitor():
             ram = psutil.virtual_memory().percent
             net_cur = psutil.net_io_counters()
             dk = psutil.disk_io_counters()
-            ul_rate, dl_rate = (net_cur.bytes_sent - net_prev.bytes_sent) / delta / 1024, (net_cur.bytes_recv - net_prev.bytes_recv) / delta / 1024
+            ul_rate = (net_cur.bytes_sent - net_prev.bytes_sent) / delta / 1024
+            dl_rate = (net_cur.bytes_recv - net_prev.bytes_recv) / delta / 1024
             net_prev, prev_time = net_cur, now
 
             t_ui = themed_table(title=f"[dim]🟢 Live — {datetime.now().strftime('%H:%M:%S')}[/dim]", border_style=col)
@@ -629,8 +659,9 @@ def live_monitor():
             if dk:
                 t_ui.add_row("Disk R", f"[magenta]{'▸'*16}[/magenta]", f"[magenta]{dk.read_bytes/1e6:.0f}MB[/magenta]")
                 t_ui.add_row("Disk W", f"[yellow]{'▸'*16}[/yellow]", f"[yellow]{dk.write_bytes/1e6:.0f}MB[/yellow]")
-            
-            top_cpu = sorted(psutil.process_iter(["name","cpu_percent"]), key=lambda p: p.info.get("cpu_percent") or 0, reverse=True)[:3]
+
+            top_cpu = sorted(psutil.process_iter(["name","cpu_percent"]),
+                             key=lambda p: p.info.get("cpu_percent") or 0, reverse=True)[:3]
             for p in top_cpu:
                 name, pct = (p.info.get("name") or "?")[:14], p.info.get("cpu_percent") or 0
                 if pct > 0.5: t_ui.add_row(f"[dim]{name}[/dim]", f"[dim]{pct_bar(min(pct,100), 12)}[/dim]", f"[dim]{pct:.1f}%[/dim]")
@@ -656,13 +687,16 @@ def top_processes():
     t_ui.add_column("Barre", style=col, width=18)
 
     for p in procs:
-        cpu, ram = p.get("cpu_percent") or 0, (p.get("memory_info").rss / 1e6) if p.get("memory_info") else 0
-        name, user = (p.get("name") or "?")[:24], (p.get("username") or "?")[:14]
-        t_ui.add_row(str(p["pid"]), name, user, p.get("status","?"), f"{cpu:.1f}%", f"{ram:.0f} MB", pct_bar(min(cpu,100)))
+        cpu = p.get("cpu_percent") or 0
+        ram = (p.get("memory_info").rss / 1e6) if p.get("memory_info") else 0
+        name = (p.get("name") or "?")[:24]
+        user = (p.get("username") or "?")[:14]
+        t_ui.add_row(str(p["pid"]), name, user, p.get("status","?"),
+                     f"{cpu:.1f}%", f"{ram:.0f} MB", pct_bar(min(cpu,100)))
     console.print(t_ui)
 
 # ═══════════════════════════════════════════════════════
-#  FEATURES UTILITAIRES
+#  FEATURES UTILITAIRES (inchangées)
 # ═══════════════════════════════════════════════════════
 
 def hash_gen():
@@ -672,11 +706,11 @@ def hash_gen():
     t_ui = themed_table(border_style=col)
     t_ui.add_column("Algo", style=col, width=10)
     t_ui.add_column("Résultat", style="white", width=70)
-    t_ui.add_row("MD5", hashlib.md5(enc).hexdigest())
-    t_ui.add_row("SHA1", hashlib.sha1(enc).hexdigest())
-    t_ui.add_row("SHA256", hashlib.sha256(enc).hexdigest())
-    t_ui.add_row("SHA512", hashlib.sha512(enc).hexdigest())
-    t_ui.add_row("SHA3-256", hashlib.sha3_256(enc).hexdigest())
+    t_ui.add_row("MD5",     hashlib.md5(enc).hexdigest())
+    t_ui.add_row("SHA1",    hashlib.sha1(enc).hexdigest())
+    t_ui.add_row("SHA256",  hashlib.sha256(enc).hexdigest())
+    t_ui.add_row("SHA512",  hashlib.sha512(enc).hexdigest())
+    t_ui.add_row("SHA3-256",hashlib.sha3_256(enc).hexdigest())
     console.print(t_ui)
 
 def password_gen():
@@ -684,7 +718,11 @@ def password_gen():
     try: n = int(console.input(f"[{col}]  Longueur [dim](default 18)[/dim] ❯ [/{col}]") or "18")
     except ValueError: n = 18
 
-    sets = {"alpha": string.ascii_letters, "digits": string.digits, "spec": "!@#$%^&*()-_=+[]{}|;:,.<>?"}
+    sets = {
+        "alpha": string.ascii_letters,
+        "digits": string.digits,
+        "spec": "!@#$%^&*()-_=+[]{}|;:,.<>?"
+    }
     chars = sets["alpha"] + sets["digits"] + sets["spec"]
 
     t_ui = themed_table(border_style=col)
@@ -701,7 +739,10 @@ def password_gen():
         return sc
 
     for i in range(5):
-        pwd = random.choice(sets["alpha"].upper()) + random.choice(sets["digits"]) + random.choice(sets["spec"]) + ''.join(random.choice(chars) for _ in range(n - 3))
+        pwd = (random.choice(sets["alpha"].upper()) +
+               random.choice(sets["digits"]) +
+               random.choice(sets["spec"]) +
+               ''.join(random.choice(chars) for _ in range(n - 3)))
         pwd_list = list(pwd); random.shuffle(pwd_list); pwd = ''.join(pwd_list)
         sc = strength(pwd)
         t_ui.add_row(str(i+1), pwd, f"{pct_bar(sc, 10)} {sc}/100")
@@ -712,18 +753,21 @@ def pass_checker():
     pwd = console.input(f"[{col}]  Mot de passe à tester ❯ [/{col}]")
     score = 0
     criteria = [
-        ("Longueur ≥ 8", len(pwd) >= 8, 20), ("Longueur ≥ 12", len(pwd) >= 12, 20),
-        ("Majuscules", any(c.isupper() for c in pwd), 15), ("Minuscules", any(c.islower() for c in pwd), 15),
-        ("Chiffres", any(c.isdigit() for c in pwd), 15), ("Caractères spéciaux", any(c in string.punctuation for c in pwd), 15),
+        ("Longueur ≥ 8",  len(pwd) >= 8,  20),
+        ("Longueur ≥ 12", len(pwd) >= 12, 20),
+        ("Majuscules",    any(c.isupper() for c in pwd), 15),
+        ("Minuscules",    any(c.islower() for c in pwd), 15),
+        ("Chiffres",      any(c.isdigit() for c in pwd), 15),
+        ("Spéciaux",      any(c in string.punctuation for c in pwd), 15),
     ]
     t_ui = themed_table(border_style=col)
     t_ui.add_column("Critère", style="white", width=30)
-    t_ui.add_column("Statut", width=15)
-    t_ui.add_column("Points", style="dim", width=10)
-    
+    t_ui.add_column("Statut",  width=15)
+    t_ui.add_column("Points",  style="dim", width=10)
     for label, ok, pts in criteria:
         if ok: score += pts
-        t_ui.add_row(label, f"[green]✔[/green]" if ok else f"[red]✘[/red]", f"+{pts}" if ok else "[dim]0[/dim]")
+        t_ui.add_row(label, "[green]✔[/green]" if ok else "[red]✘[/red]",
+                     f"+{pts}" if ok else "[dim]0[/dim]")
     t_ui.add_row("─"*28, "─"*13, "─"*8)
     lvl = "FAIBLE" if score < 40 else "MOYEN" if score < 70 else "FORT" if score < 90 else "EXCELLENT"
     lvl_col = "red" if score < 40 else "yellow" if score < 70 else "green" if score < 90 else "bright_green"
@@ -732,16 +776,19 @@ def pass_checker():
     console.print(t_ui)
 
 def base64_tool():
-    col = th()["cat_uti"]
+    col  = th()["cat_uti"]
     mode = console.input(f"[{col}]  (e)ncode / (d)ecode ❯ [/{col}]").strip().lower()
     text = console.input(f"[{col}]  Texte ❯ [/{col}]")
     t_ui = themed_table(border_style=col)
-    t_ui.add_column("Action", style=col, width=10)
+    t_ui.add_column("Action",   style=col, width=10)
     t_ui.add_column("Résultat", style="white", width=64)
     try:
-        if mode in ("e","encode"): t_ui.add_row("Encodé", base64.b64encode(text.encode()).decode())
-        else: t_ui.add_row("Décodé", base64.b64decode(text.encode()).decode())
-    except Exception as e: t_ui.add_row(f"[red]Erreur[/red]", str(e))
+        if mode in ("e","encode"):
+            t_ui.add_row("Encodé", base64.b64encode(text.encode()).decode())
+        else:
+            t_ui.add_row("Décodé", base64.b64decode(text.encode()).decode())
+    except Exception as e:
+        t_ui.add_row("[red]Erreur[/red]", str(e))
     console.print(t_ui)
 
 def clean_temp():
@@ -749,39 +796,31 @@ def clean_temp():
     console.print(f"[dim {col}]  Nettoyage des fichiers temporaires en cours...[/dim {col}]")
     count = 0
     temp_dirs = []
-    
     if os.name == "nt":
         temp_dirs = [os.environ.get("TEMP"), os.environ.get("TMP"), "C:\\Windows\\Temp"]
     else:
         temp_dirs = ["/tmp", "/var/tmp"]
-
     for temp_dir in temp_dirs:
-        if not temp_dir or not os.path.exists(temp_dir): 
-            continue
+        if not temp_dir or not os.path.exists(temp_dir): continue
         for root, dirs, files in os.walk(temp_dir, topdown=False):
             for name in files:
-                try:
-                    os.remove(os.path.join(root, name))
-                    count += 1
-                except Exception: 
-                    pass
+                try: os.remove(os.path.join(root, name)); count += 1
+                except Exception: pass
             for name in dirs:
-                try:
-                    os.rmdir(os.path.join(root, name))
-                except Exception: 
-                    pass
-                    
-    success(f"Fichiers temporaires nettoyés ({count} éléments supprimés de manière sécurisée) !")
+                try: os.rmdir(os.path.join(root, name))
+                except Exception: pass
+    success(f"Fichiers temporaires nettoyés ({count} éléments supprimés) !")
 
 # ═══════════════════════════════════════════════════════
-#  FEATURES AVANCÉES (NOUVELLES)
+#  FEATURES AVANCÉES (inchangées)
 # ═══════════════════════════════════════════════════════
 
 def traceroute():
     col  = th()["cat_adv"]
     host = console.input(f"[{col}]  Cible [dim](default: 8.8.8.8)[/dim] ❯ [/{col}]").strip() or "8.8.8.8"
     console.print(f"\n[dim {col}]Traceroute → {host}...[/dim {col}]\n")
-    cmd = (["tracert", host] if platform.system().lower() == "windows" else ["traceroute", "-m", "20", host])
+    cmd = (["tracert", host] if platform.system().lower() == "windows"
+           else ["traceroute", "-m", "20", host])
     try: subprocess.run(cmd)
     except FileNotFoundError: error("traceroute/tracert non disponible sur ce système.")
 
@@ -793,50 +832,46 @@ def whois_geoip():
     except Exception: ip = host
 
     t_ui = themed_table(border_style=col)
-    t_ui.add_column("Champ", style=col, width=22)
+    t_ui.add_column("Champ",  style=col, width=22)
     t_ui.add_column("Valeur", style="white", width=54)
     t_ui.add_row("Cible", host)
     t_ui.add_row("IP", ip)
 
     try:
         safe_ip = urllib.parse.quote(ip)
-        req = urllib.request.Request(f"https://ipinfo.io/{safe_ip}/json", headers={'User-Agent': 'Mozilla/5.0'})
+        req = urllib.request.Request(f"https://ipinfo.io/{safe_ip}/json",
+                                     headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
         fields = [
-            ("Hostname", "hostname"), ("Ville", "city"), ("Région","region"),
-            ("Pays", "country"), ("Postal", "postal"), ("Org", "org"),
-            ("Fuseau", "timezone"), ("Coords", "loc"),
+            ("Hostname","hostname"), ("Ville","city"), ("Région","region"),
+            ("Pays","country"), ("Postal","postal"), ("Org","org"),
+            ("Fuseau","timezone"), ("Coords","loc"),
         ]
         for label, key in fields:
             val = data.get(key, "—")
             if val and val != "—": t_ui.add_row(label, str(val))
     except Exception as e: t_ui.add_row("Erreur GeoIP", str(e))
-
     console.print(t_ui)
 
 def qr_ascii():
     col  = th()["cat_adv"]
     text = console.input(f"[{col}]  Texte/URL pour QR ❯ [/{col}]").strip()
     if not text: return
-
     seed = int(hashlib.md5(text.encode()).hexdigest(), 16)
     rng, size = random.Random(seed), 21
-
     console.print(f"\n  [dim]QR ASCII pour : [bold]{text[:40]}[/bold][/dim]\n")
     pri = th()["primary"]
     finder = set()
     for r in range(7):
         for c in range(7):
             finder.update([(r, c), (r, size-7+c), (size-7+r, c)])
-
     line_top = f"  [bold {pri}]{'██' * (size + 2)}[/bold {pri}]"
     console.print(line_top)
     for row in range(size):
         line = f"  [bold {pri}]██[/bold {pri}]"
         for col_i in range(size):
-            if (row, col_i) in finder: line += f"[bold {pri}]██[/bold {pri}]"
-            else: line += f"[bold {pri}]██[/bold {pri}]" if rng.randint(0, 1) else "  "
+            line += f"[bold {pri}]██[/bold {pri}]" if (row,col_i) in finder or rng.randint(0,1) else "  "
         line += f"[bold {pri}]██[/bold {pri}]"
         console.print(line)
     console.print(line_top)
@@ -847,80 +882,90 @@ def converter():
     col = th()["cat_adv"]
     console.print(f"  [{col}]Catégories :[/{col}]  [dim]1[/dim] Octets  [dim]2[/dim] Temps  [dim]3[/dim] Température  [dim]4[/dim] Débit réseau")
     cat = console.input(f"[{col}]  Catégorie ❯ [/{col}]").strip()
-
     t_ui = themed_table(border_style=col)
-    t_ui.add_column("Unité", style=col, width=22)
+    t_ui.add_column("Unité",  style=col, width=22)
     t_ui.add_column("Valeur", style="bold white", width=30)
-
     raw = console.input(f"[{col}]  Valeur ❯ [/{col}]").strip()
     try: n = float(raw)
     except ValueError: error("Valeur invalide."); return
-
     if cat == "1":
-        t_ui.add_row("Bytes", f"{n:,.0f}"); t_ui.add_row("Megabytes", f"{n/1e6:,.3f}")
-        t_ui.add_row("Gigabytes", f"{n/1e9:,.3f}"); t_ui.add_row("Gibibytes", f"{n/1073741824:,.6f}")
+        t_ui.add_row("Bytes",     f"{n:,.0f}")
+        t_ui.add_row("Megabytes", f"{n/1e6:,.3f}")
+        t_ui.add_row("Gigabytes", f"{n/1e9:,.3f}")
+        t_ui.add_row("Gibibytes", f"{n/1073741824:,.6f}")
     elif cat == "2":
         h, rem = divmod(n, 3600); m, s = divmod(rem, 60)
-        t_ui.add_row("Heures", f"{n/3600:,.6f}"); t_ui.add_row("Formaté", f"{int(h)}h {int(m)}m {s:.2f}s")
+        t_ui.add_row("Heures",  f"{n/3600:,.6f}")
+        t_ui.add_row("Formaté", f"{int(h)}h {int(m)}m {s:.2f}s")
     elif cat == "3":
-        t_ui.add_row("Celsius", f"{n:.2f} °C"); t_ui.add_row("Fahrenheit", f"{n*9/5+32:.2f} °F")
+        t_ui.add_row("Celsius",    f"{n:.2f} °C")
+        t_ui.add_row("Fahrenheit", f"{n*9/5+32:.2f} °F")
     elif cat == "4":
-        t_ui.add_row("Mbps", f"{n:,.2f}"); t_ui.add_row("MB/s", f"{n/8:,.3f}")
+        t_ui.add_row("Mbps", f"{n:,.2f}")
+        t_ui.add_row("MB/s", f"{n/8:,.3f}")
     else: error("Catégorie invalide."); return
-
     console.print(t_ui)
 
 def suspicious_processes():
     col = th()["cat_adv"]
-    SUSPECT_NAMES = {"nc","ncat","netcat","nmap","masscan","wireshark","tcpdump","mimikatz","msfconsole","msfvenom","hydra","john","hashcat","aircrack","aireplay","airmon","ettercap","bettercap","responder","sqlmap","burpsuite","metasploit","cobaltstrike","empire","rat","keylogger","stealer","cryptominer","xmrig","minergate"}
+    SUSPECT_NAMES = {
+        "nc","ncat","netcat","nmap","masscan","wireshark","tcpdump","mimikatz",
+        "msfconsole","msfvenom","hydra","john","hashcat","aircrack","aireplay",
+        "airmon","ettercap","bettercap","responder","sqlmap","burpsuite",
+        "metasploit","cobaltstrike","empire","rat","keylogger","stealer",
+        "cryptominer","xmrig","minergate"
+    }
     SUSPECT_PORTS = {4444, 1337, 31337, 6666, 8888, 9999, 12345, 54321, 65535}
-
     t_ui = themed_table(border_style=col)
-    t_ui.add_column("PID", style="dim", width=8); t_ui.add_column("Nom", style="bold white", width=22)
-    t_ui.add_column("Raison", style="yellow", width=26); t_ui.add_column("User", style="dim", width=14); t_ui.add_column("CMD", style="dim", width=26)
-
+    t_ui.add_column("PID",    style="dim", width=8)
+    t_ui.add_column("Nom",    style="bold white", width=22)
+    t_ui.add_column("Raison", style="yellow", width=26)
+    t_ui.add_column("User",   style="dim", width=14)
+    t_ui.add_column("CMD",    style="dim", width=26)
     found = 0
     for p in psutil.process_iter(["pid","name","username","cmdline","connections"]):
         try:
-            info_p, name_l, reasons = p.info, (p.info.get("name") or "").lower(), []
+            info_p = p.info; name_l = (info_p.get("name") or "").lower(); reasons = []
             for s in SUSPECT_NAMES:
                 if s in name_l: reasons.append(f"[yellow]nom '{s}'[/yellow]"); break
             try:
                 for conn in (info_p.get("connections") or []):
-                    if hasattr(conn, "laddr") and conn.laddr and conn.laddr.port in SUSPECT_PORTS: reasons.append(f"[red]port {conn.laddr.port}[/red]")
-                    if hasattr(conn, "raddr") and conn.raddr and conn.raddr.port in SUSPECT_PORTS: reasons.append(f"[red]→ port {conn.raddr.port}[/red]")
+                    if hasattr(conn,"laddr") and conn.laddr and conn.laddr.port in SUSPECT_PORTS:
+                        reasons.append(f"[red]port {conn.laddr.port}[/red]")
+                    if hasattr(conn,"raddr") and conn.raddr and conn.raddr.port in SUSPECT_PORTS:
+                        reasons.append(f"[red]→ port {conn.raddr.port}[/red]")
             except (psutil.AccessDenied, psutil.NoSuchProcess): pass
             if reasons:
                 found += 1
-                t_ui.add_row(str(info_p["pid"]), (info_p.get("name") or "?")[:22], ", ".join(reasons[:2]), (info_p.get("username") or "?")[:14], " ".join((info_p.get("cmdline") or []))[:26])
+                t_ui.add_row(str(info_p["pid"]), (info_p.get("name") or "?")[:22],
+                             ", ".join(reasons[:2]), (info_p.get("username") or "?")[:14],
+                             " ".join((info_p.get("cmdline") or []))[:26])
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess): pass
-
-    if found == 0: t_ui.add_row("—", "[green]Aucun suspect détecté[/green]", "—", "—", "—")
+    if found == 0: t_ui.add_row("—", "[green]Aucun suspect détecté[/green]", "—","—","—")
     console.print(t_ui)
-    if found > 0: console.print(f"\n  [{th()['warning']}]⚠  {found} processus suspect(s) trouvé(s) — vérifiez manuellement.[/{th()['warning']}]")
+    if found > 0: warn(f"{found} processus suspect(s) trouvé(s) — vérifiez manuellement.")
 
 def speedtest_basic():
     col = th()["cat_adv"]
     console.print(f"\n[dim {col}]Test de débit en cours (téléchargement)...[/dim {col}]\n")
-    TEST_URL, FALLBACK = "http://speedtest.tele2.net/1MB.zip", "https://httpbin.org/bytes/524288"
-
+    TEST_URL = "http://speedtest.tele2.net/1MB.zip"
+    FALLBACK = "https://httpbin.org/bytes/524288"
     t_ui = themed_table(border_style=col)
-    t_ui.add_column("Métrique", style=col, width=22); t_ui.add_column("Valeur", style="bold white", width=30)
-
+    t_ui.add_column("Métrique", style=col, width=22)
+    t_ui.add_column("Valeur",   style="bold white", width=30)
     try:
         start = time.time(); urllib.request.urlopen("https://www.google.com", timeout=3)
-        t_ui.add_row("Latence HTTP (Google)", f"{(time.time() - start) * 1000:.0f} ms")
+        t_ui.add_row("Latence HTTP (Google)", f"{(time.time()-start)*1000:.0f} ms")
     except Exception: t_ui.add_row("Latence HTTP", "[red]N/A[/red]")
-
-    for url, label in [(TEST_URL, "1MB.zip"), (FALLBACK, "512KB httpbin")]:
+    for url, label in [(TEST_URL,"1MB.zip"),(FALLBACK,"512KB httpbin")]:
         try:
             start = time.time()
             with urllib.request.urlopen(url, timeout=10) as resp: data = resp.read()
-            duration, size_mb = time.time() - start, len(data) / 1e6
-            t_ui.add_row(f"Download ({label})", f"[bold green]{size_mb / duration * 8:.2f} Mbps[/bold green]  [dim]({size_mb:.2f}MB en {duration:.1f}s)[/dim]")
+            duration = time.time() - start; size_mb = len(data) / 1e6
+            t_ui.add_row(f"Download ({label})",
+                         f"[bold green]{size_mb/duration*8:.2f} Mbps[/bold green]  [dim]({size_mb:.2f}MB en {duration:.1f}s)[/dim]")
             break
         except Exception as e: t_ui.add_row(f"Download ({label})", f"[red]Erreur : {e}[/red]")
-
     t_ui.add_row("─"*20, "─"*28)
     t_ui.add_row("[dim]Note[/dim]", "[dim]Test minimal — pour un vrai speedtest : speedtest-cli[/dim]")
     console.print(t_ui)
@@ -929,7 +974,9 @@ def show_history():
     col = th()["cat_adv"]
     if not CMD_HISTORY: info("Aucune commande dans l'historique."); return
     t_ui = themed_table(border_style=col)
-    t_ui.add_column("#", style=f"dim {col}", width=6); t_ui.add_column("Commande", style="white", width=20); t_ui.add_column("Label", style="dim", width=30)
+    t_ui.add_column("#",       style=f"dim {col}", width=6)
+    t_ui.add_column("Commande",style="white", width=20)
+    t_ui.add_column("Label",   style="dim", width=30)
     for i, cmd in enumerate(CMD_HISTORY, 1):
         label, _ = _color_for(cmd)
         t_ui.add_row(str(i), cmd, label)
@@ -942,21 +989,844 @@ def change_theme():
     success(f"Thème : [bold]{old_name}[/bold] → [bold]{th()['name']}[/bold]")
     time.sleep(0.8)
 
-# ── ROUTER ───────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════
+#  ★ NOUVELLES FEATURES v4.1.0
+# ═══════════════════════════════════════════════════════
+
+# ── 29 · FIREWALL RULES ─────────────────────────────────
+def firewall_rules():
+    """Affiche les règles firewall actives (iptables ou netsh selon l'OS)."""
+    col = th()["primary"]
+    system = platform.system().lower()
+
+    if system == "windows":
+        console.print(f"[dim {col}]  Récupération des règles Windows Firewall...[/dim {col}]\n")
+        try:
+            result = subprocess.run(
+                ["netsh", "advfirewall", "firewall", "show", "rule", "name=all"],
+                capture_output=True, text=True, timeout=10
+            )
+            lines = result.stdout.splitlines()
+            t_ui = themed_table(border_style=col)
+            t_ui.add_column("Nom",       style="bold white", width=30)
+            t_ui.add_column("Enabled",   style="white", width=10)
+            t_ui.add_column("Direction", style=col, width=12)
+            t_ui.add_column("Action",    style="white", width=10)
+            t_ui.add_column("Protocole", style="dim", width=12)
+
+            rule = {}
+            for line in lines:
+                line = line.strip()
+                if line.startswith("Rule Name:"):   rule["name"] = line.split(":", 1)[1].strip()
+                elif line.startswith("Enabled:"):   rule["enabled"] = line.split(":", 1)[1].strip()
+                elif line.startswith("Direction:"): rule["direction"] = line.split(":", 1)[1].strip()
+                elif line.startswith("Action:"):    rule["action"] = line.split(":", 1)[1].strip()
+                elif line.startswith("Protocol:"):
+                    rule["protocol"] = line.split(":", 1)[1].strip()
+                    if rule.get("enabled","No") == "Yes":
+                        action_col = "green" if rule.get("action","").lower() == "allow" else "red"
+                        t_ui.add_row(
+                            rule.get("name","?")[:30],
+                            f"[{action_col}]{rule.get('enabled','?')}[/{action_col}]",
+                            rule.get("direction","?"),
+                            f"[{action_col}]{rule.get('action','?')}[/{action_col}]",
+                            rule.get("protocol","?")
+                        )
+                    rule = {}
+            console.print(t_ui)
+        except FileNotFoundError:
+            error("netsh non disponible.")
+        except subprocess.TimeoutExpired:
+            error("Timeout lors de la récupération des règles.")
+
+    else:
+        # Linux — essai iptables puis nftables
+        console.print(f"[dim {col}]  Récupération des règles iptables...[/dim {col}]\n")
+        tried_nft = False
+
+        def try_iptables():
+            for cmd in (["iptables", "-L", "-n", "-v", "--line-numbers"],
+                        ["sudo", "iptables", "-L", "-n", "-v", "--line-numbers"]):
+                try:
+                    res = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
+                    if res.returncode == 0 and res.stdout.strip():
+                        return res.stdout
+                except (FileNotFoundError, subprocess.TimeoutExpired): pass
+            return None
+
+        output = try_iptables()
+
+        if output:
+            t_ui = themed_table(border_style=col)
+            t_ui.add_column("#",      style=f"dim {col}", width=6)
+            t_ui.add_column("Chain",  style=col, width=12)
+            t_ui.add_column("Règle",  style="white", width=56)
+
+            chain = "?"
+            count = 0
+            for line in output.splitlines():
+                if line.startswith("Chain"):
+                    chain = line.split()[1]
+                elif line.strip() and not line.startswith("pkts") and not line.startswith("num"):
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        count += 1
+                        target = parts[2] if len(parts) > 2 else "?"
+                        tcol = "green" if "ACCEPT" in target else "red" if "DROP" in target or "REJECT" in target else "yellow"
+                        t_ui.add_row(str(count), chain, f"[{tcol}]{line.strip()[:56]}[/{tcol}]")
+            if count == 0:
+                t_ui.add_row("—", "—", "[dim]Aucune règle trouvée (tables vides)[/dim]")
+            console.print(t_ui)
+        else:
+            tried_nft = True
+            info("iptables indisponible ou accès refusé, tentative avec nftables...")
+            try:
+                res = subprocess.run(["nft", "list", "ruleset"], capture_output=True, text=True, timeout=8)
+                if res.returncode == 0 and res.stdout.strip():
+                    console.print(f"[{col}]{res.stdout}[/{col}]")
+                else:
+                    warn("Aucune règle firewall trouvée. Lancez en root pour un accès complet.")
+            except FileNotFoundError:
+                error("Ni iptables ni nftables disponibles sur ce système.")
+
+        # Essai ufw status si dispo
+        try:
+            res_ufw = subprocess.run(["ufw", "status", "verbose"], capture_output=True, text=True, timeout=5)
+            if res_ufw.returncode == 0 and res_ufw.stdout.strip():
+                console.print()
+                console.print(Rule(f"[{col}]UFW Status[/{col}]", style=f"dim {col}"))
+                console.print(f"[{col}]{res_ufw.stdout}[/{col}]")
+        except (FileNotFoundError, subprocess.TimeoutExpired): pass
+
+    info("Utilisez les droits root/admin pour voir toutes les règles.")
+
+
+# ── 30 · SSH AUDIT ──────────────────────────────────────
+def ssh_audit():
+    """Audite la configuration SSH du serveur local."""
+    col = th()["primary"]
+
+    SSH_CONF_PATHS = [
+        "/etc/ssh/sshd_config",
+        "/etc/sshd_config",
+        "C:\\ProgramData\\ssh\\sshd_config",
+    ]
+
+    conf_path = None
+    for p in SSH_CONF_PATHS:
+        if os.path.isfile(p):
+            conf_path = p
+            break
+
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Paramètre",   style=col, width=26)
+    t_ui.add_column("Valeur",      style="bold white", width=24)
+    t_ui.add_column("Statut",      width=20)
+    t_ui.add_column("Recommandé",  style="dim", width=20)
+
+    CHECKS = {
+        "Port":                    ("22",      "≠ 22 = mieux",    False),
+        "PermitRootLogin":         ("no",      "no",              True),
+        "PasswordAuthentication":  ("no",      "no",              True),
+        "PubkeyAuthentication":    ("yes",     "yes",             True),
+        "PermitEmptyPasswords":    ("no",      "no",              True),
+        "X11Forwarding":           ("no",      "no",              True),
+        "MaxAuthTries":            ("3",       "≤ 3",             False),
+        "LoginGraceTime":          ("30",      "≤ 30s",           False),
+        "AllowAgentForwarding":    ("no",      "no",              True),
+        "ClientAliveInterval":     ("300",     "≤ 300",           False),
+        "Protocol":                ("2",       "2 uniquement",    True),
+        "UsePAM":                  ("yes",     "yes",             True),
+        "StrictModes":             ("yes",     "yes",             True),
+    }
+
+    config = {}
+    if conf_path:
+        try:
+            with open(conf_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        parts = line.split(None, 1)
+                        if len(parts) == 2:
+                            config[parts[0]] = parts[1].strip()
+        except PermissionError:
+            warn(f"Accès refusé à {conf_path} — lancez en root.")
+
+        t_ui.add_row(f"[dim]Fichier[/dim]", conf_path, "[dim]—[/dim]", "")
+        t_ui.add_row("─"*24, "─"*22, "─"*18, "─"*18)
+
+        score, total = 0, 0
+        for param, (recommended, hint, exact) in CHECKS.items():
+            val = config.get(param, "[dim]non défini[/dim]")
+            raw = config.get(param, "")
+            total += 1
+            if exact:
+                ok = (raw.lower() == recommended.lower())
+            else:
+                # Port : ≠ 22 ; MaxAuthTries : ≤ 3 ; etc.
+                try:
+                    n = int(raw)
+                    if "≠" in hint: ok = (n != int(recommended))
+                    elif "≤" in hint: ok = (n <= int(recommended.split("≤")[-1].strip().split()[0]))
+                    else: ok = (raw.lower() == recommended.lower())
+                except (ValueError, AttributeError): ok = False
+            if ok: score += 1
+            status = f"[green]✔ OK[/green]" if ok else f"[red]✘ KO[/red]"
+            t_ui.add_row(param, val if val else "[dim]—[/dim]", status, hint)
+
+        t_ui.add_row("─"*24, "─"*22, "─"*18, "─"*18)
+        pct = int(score / total * 100) if total else 0
+        pct_c = "green" if pct >= 75 else "yellow" if pct >= 50 else "red"
+        t_ui.add_row("Score SSH", f"[bold {pct_c}]{score}/{total}  ({pct}%)[/bold {pct_c}]",
+                     f"{pct_bar(pct, 12)}", "")
+    else:
+        t_ui.add_row("sshd_config", "[red]Introuvable[/red]", "—", "—")
+        info("SSH n'est peut-être pas installé ou vous n'êtes pas sur Linux/Windows Server.")
+
+    console.print(t_ui)
+
+    # Vérifier si le service SSH tourne
+    ssh_running = False
+    for p in psutil.process_iter(["name"]):
+        try:
+            n = (p.info.get("name") or "").lower()
+            if "sshd" in n or "ssh" in n:
+                ssh_running = True; break
+        except (psutil.NoSuchProcess, psutil.AccessDenied): pass
+    console.print()
+    if ssh_running:
+        success("Service sshd détecté comme actif.")
+    else:
+        info("Aucun processus sshd détecté (service arrêté ou non installé).")
+
+
+# ── 31 · WATCHER LOGS ───────────────────────────────────
+def watcher_logs():
+    """Suit un fichier log en temps réel avec colorisation par niveau."""
+    col = th()["primary"]
+
+    DEFAULT_LOGS = {
+        "1": "/var/log/syslog",
+        "2": "/var/log/auth.log",
+        "3": "/var/log/kern.log",
+        "4": "/var/log/nginx/access.log",
+        "5": "/var/log/apache2/access.log",
+    }
+
+    if platform.system().lower() == "windows":
+        DEFAULT_LOGS = {
+            "1": "C:\\Windows\\Logs\\WindowsUpdate\\WindowsUpdate.log",
+        }
+
+    console.print(f"[{col}]  Logs disponibles :[/{col}]")
+    for k, v in DEFAULT_LOGS.items():
+        exists = "[green]✔[/green]" if os.path.isfile(v) else "[red]✘[/red]"
+        console.print(f"  [dim]{k}[/dim]  {exists}  {v}")
+    console.print()
+
+    choice = console.input(f"[{col}]  Numéro ou chemin personnalisé ❯ [/{col}]").strip()
+    log_path = DEFAULT_LOGS.get(choice, choice)
+
+    if not os.path.isfile(log_path):
+        error(f"Fichier introuvable : {log_path}")
+        return
+
+    try:
+        n_lines = int(console.input(f"[{col}]  Dernières lignes à afficher [dim](default: 20)[/dim] ❯ [/{col}]").strip() or "20")
+    except ValueError:
+        n_lines = 20
+
+    def colorize(line: str) -> str:
+        l = line.lower()
+        if any(k in l for k in ("error","err","fatal","critical","crit","alert","emerg")):
+            return f"[red]{line}[/red]"
+        elif any(k in l for k in ("warn","warning")):
+            return f"[yellow]{line}[/yellow]"
+        elif any(k in l for k in ("info","notice","debug")):
+            return f"[dim]{line}[/dim]"
+        elif any(k in l for k in ("success","ok","started","ready","listening")):
+            return f"[green]{line}[/green]"
+        elif any(k in l for k in ("fail","denied","refused","invalid","unauthorized")):
+            return f"[bold red]{line}[/bold red]"
+        return line
+
+    console.print(f"\n[dim {col}]  Watching : {log_path}  —  Ctrl+C pour arrêter[/dim {col}]\n")
+
+    # Afficher les dernières lignes
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+            all_lines = f.readlines()
+            for line in all_lines[-n_lines:]:
+                console.print(f"  {colorize(line.rstrip())}")
+    except PermissionError:
+        error(f"Accès refusé à {log_path} — essayez en root.")
+        return
+
+    # Suivi en temps réel
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+            f.seek(0, 2)  # fin du fichier
+            while True:
+                line = f.readline()
+                if line:
+                    ts = datetime.now().strftime("%H:%M:%S")
+                    console.print(f"  [{th()['dim_col']}]{ts}[/{th()['dim_col']}]  {colorize(line.rstrip())}")
+                else:
+                    time.sleep(0.3)
+    except KeyboardInterrupt:
+        console.print(f"\n[{col}]  Watcher arrêté.[/{col}]")
+    except PermissionError:
+        error(f"Accès refusé.")
+
+
+# ── 32 · SERVICES MANAGER ───────────────────────────────
+def services_manager():
+    """Liste les services système avec leur statut."""
+    col = th()["primary"]
+    system = platform.system().lower()
+
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Service",  style="bold white", width=30)
+    t_ui.add_column("Statut",   width=14)
+    t_ui.add_column("Type",     style="dim", width=10)
+    t_ui.add_column("PID",      style="dim", width=8)
+    t_ui.add_column("Description", style="dim", width=28)
+
+    if system == "windows":
+        try:
+            result = subprocess.run(
+                ["sc", "query", "type=", "all", "state=", "all"],
+                capture_output=True, text=True, timeout=10
+            )
+            svc = {}
+            count = 0
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if line.startswith("SERVICE_NAME:"):
+                    svc["name"] = line.split(":", 1)[1].strip()
+                elif line.startswith("STATE"):
+                    raw_state = line.split(":", 1)[1].strip() if ":" in line else line
+                    state = raw_state.split()[1] if len(raw_state.split()) > 1 else raw_state
+                    svc["state"] = state
+                elif line.startswith("DISPLAY_NAME:"):
+                    svc["display"] = line.split(":", 1)[1].strip()
+                    if svc.get("name"):
+                        count += 1
+                        running = svc.get("state","") == "RUNNING"
+                        sc = f"[green]▶ RUNNING[/green]" if running else f"[red]■ {svc.get('state','?')}[/red]"
+                        t_ui.add_row(svc.get("name","?")[:30], sc, "win32", "—",
+                                     svc.get("display","?")[:28])
+                    svc = {}
+            info(f"{count} services listés.")
+        except Exception as e:
+            error(f"Erreur : {e}")
+
+    else:
+        # Linux — systemctl ou /etc/init.d
+        try:
+            result = subprocess.run(
+                ["systemctl", "list-units", "--type=service", "--all",
+                 "--no-pager", "--plain", "--no-legend"],
+                capture_output=True, text=True, timeout=10
+            )
+            count = 0
+            for line in result.stdout.splitlines():
+                parts = line.split()
+                if len(parts) < 4: continue
+                name, load, active, sub = parts[0], parts[1], parts[2], parts[3]
+                desc = " ".join(parts[4:])[:28] if len(parts) > 4 else "—"
+
+                if active == "active":
+                    status_str = f"[green]▶ active[/green]"
+                elif active == "failed":
+                    status_str = f"[red]✘ failed[/red]"
+                elif active == "inactive":
+                    status_str = f"[dim]■ inactive[/dim]"
+                else:
+                    status_str = f"[yellow]{active}[/yellow]"
+
+                # Trouver le PID
+                pid_str = "—"
+                try:
+                    pid_res = subprocess.run(
+                        ["systemctl", "show", name, "--property=MainPID"],
+                        capture_output=True, text=True, timeout=2
+                    )
+                    for l2 in pid_res.stdout.splitlines():
+                        if l2.startswith("MainPID="):
+                            pid_val = l2.split("=")[1].strip()
+                            if pid_val and pid_val != "0": pid_str = pid_val
+                except Exception: pass
+
+                t_ui.add_row(name[:30], status_str, sub[:10], pid_str, desc)
+                count += 1
+
+            if count == 0:
+                # Fallback : lire /etc/init.d
+                init_d = "/etc/init.d"
+                if os.path.isdir(init_d):
+                    for svc_name in sorted(os.listdir(init_d))[:40]:
+                        t_ui.add_row(svc_name, "[dim]—[/dim]", "init.d", "—", "—")
+                        count += 1
+
+            info(f"{count} service(s) trouvé(s).")
+        except FileNotFoundError:
+            error("systemctl non disponible. Ce système n'utilise pas systemd.")
+        except subprocess.TimeoutExpired:
+            error("Timeout — trop de services à lister.")
+
+    console.print(t_ui)
+
+    # Action optionnelle
+    console.print()
+    action_svc = console.input(
+        f"[{col}]  Nom de service à inspecter [dim](vide = ignorer)[/dim] ❯ [/{col}]"
+    ).strip()
+    if action_svc:
+        try:
+            res = subprocess.run(
+                ["systemctl", "status", action_svc, "--no-pager"],
+                capture_output=True, text=True, timeout=5
+            )
+            console.print()
+            console.print(Rule(f"[{col}]status : {action_svc}[/{col}]", style=f"dim {col}"))
+            console.print(res.stdout or res.stderr)
+        except Exception:
+            try:
+                res2 = subprocess.run(
+                    ["sc", "query", action_svc],
+                    capture_output=True, text=True, timeout=5
+                )
+                console.print(res2.stdout)
+            except Exception as e2:
+                error(str(e2))
+
+
+# ── 33 · ENV INSPECTOR ──────────────────────────────────
+def env_inspector():
+    """Affiche et filtre les variables d'environnement."""
+    col = th()["primary"]
+
+    SENSITIVE = {"password","passwd","secret","token","key","api_key","apikey",
+                 "auth","credential","private","cert","ssl","pass","pwd"}
+
+    filtr = console.input(
+        f"[{col}]  Filtre [dim](vide = tout afficher)[/dim] ❯ [/{col}]"
+    ).strip().lower()
+
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Variable", style=col, width=30)
+    t_ui.add_column("Valeur",   style="white", width=56)
+
+    count = 0
+    for key, val in sorted(os.environ.items()):
+        if filtr and filtr not in key.lower() and filtr not in val.lower():
+            continue
+        # Masquer les valeurs sensibles
+        is_sensitive = any(s in key.lower() for s in SENSITIVE)
+        display_val = f"[red]{'*' * min(len(val), 20)}  [dim](masqué)[/dim][/red]" if is_sensitive else val[:56]
+        t_ui.add_row(key, display_val)
+        count += 1
+
+    console.print(t_ui)
+    info(f"{count} variable(s) affichée(s).")
+    if any(any(s in k.lower() for s in SENSITIVE) for k in os.environ):
+        warn("Des variables sensibles ont été masquées (tokens, mots de passe...).")
+
+
+# ── 34 · ARP TABLE ──────────────────────────────────────
+def arp_table():
+    """Affiche la table ARP locale et signale les doublons d'IP."""
+    col = th()["primary"]
+
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("IP",        style=col, width=20)
+    t_ui.add_column("MAC",       style="bold white", width=22)
+    t_ui.add_column("Interface", style="dim", width=14)
+    t_ui.add_column("Type",      style="dim", width=10)
+    t_ui.add_column("Alerte",    width=14)
+
+    entries = []
+
+    if platform.system().lower() == "windows":
+        try:
+            res = subprocess.run(["arp", "-a"], capture_output=True, text=True, timeout=5)
+            iface = "?"
+            for line in res.stdout.splitlines():
+                line = line.strip()
+                if line.startswith("Interface:"):
+                    iface = line.split()[1]
+                elif "dynamic" in line.lower() or "static" in line.lower():
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        entries.append({"ip": parts[0], "mac": parts[1],
+                                        "type": parts[2], "iface": iface})
+        except Exception as e: error(str(e)); return
+    else:
+        try:
+            res = subprocess.run(["arp", "-n"], capture_output=True, text=True, timeout=5)
+            for line in res.stdout.splitlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 3 and parts[2] != "(incomplete)":
+                    entries.append({"ip": parts[0], "mac": parts[2],
+                                    "type": "dynamic", "iface": parts[-1] if len(parts) >= 5 else "?"})
+        except FileNotFoundError:
+            # Fallback : lire /proc/net/arp
+            try:
+                with open("/proc/net/arp", "r") as f:
+                    lines = f.readlines()[1:]
+                for line in lines:
+                    parts = line.split()
+                    if len(parts) >= 6 and parts[3] != "00:00:00:00:00:00":
+                        entries.append({"ip": parts[0], "mac": parts[3],
+                                        "type": "dynamic", "iface": parts[5]})
+            except Exception as e: error(str(e)); return
+
+    # Détection doublons MAC
+    mac_count: dict = {}
+    for e in entries:
+        mac_count[e["mac"]] = mac_count.get(e["mac"], 0) + 1
+
+    dupes = 0
+    for e in entries:
+        is_dupe = mac_count.get(e["mac"], 1) > 1
+        alerte = "[red]⚠ ARP SPOOF?[/red]" if is_dupe else "[green]OK[/green]"
+        if is_dupe: dupes += 1
+        t_ui.add_row(e["ip"], e["mac"], e.get("iface","?"), e["type"], alerte)
+
+    console.print(t_ui)
+    info(f"{len(entries)} entrée(s) ARP.")
+    if dupes:
+        warn(f"{dupes} doublon(s) MAC détecté(s) — possible ARP poisoning/spoofing !")
+    else:
+        success("Aucun doublon MAC détecté.")
+
+
+# ── 35 · NET CONNECTIONS ────────────────────────────────
+def net_connections():
+    """Liste les connexions réseau actives groupées par état."""
+    col = th()["primary"]
+
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Proto",     style=col, width=8)
+    t_ui.add_column("Local",     style="white", width=24)
+    t_ui.add_column("Distant",   style="white", width=24)
+    t_ui.add_column("État",      width=14)
+    t_ui.add_column("PID",       style="dim", width=8)
+    t_ui.add_column("Process",   style="dim", width=18)
+
+    STATE_COLORS = {
+        "ESTABLISHED": "green", "LISTEN": "cyan", "TIME_WAIT": "yellow",
+        "CLOSE_WAIT": "yellow", "FIN_WAIT1": "dim", "FIN_WAIT2": "dim",
+        "SYN_SENT": "magenta", "SYN_RECV": "magenta", "NONE": "dim",
+    }
+
+    stats: dict = {}
+    rows = []
+
+    try:
+        conns = psutil.net_connections(kind="all")
+    except psutil.AccessDenied:
+        warn("Accès limité — lancez en root pour voir toutes les connexions.")
+        try:
+            conns = psutil.net_connections(kind="inet")
+        except Exception as e:
+            error(str(e)); return
+
+    for c in conns:
+        status = getattr(c, "status", "NONE") or "NONE"
+        stats[status] = stats.get(status, 0) + 1
+
+        laddr = f"{c.laddr.ip}:{c.laddr.port}" if c.laddr else "—"
+        raddr = f"{c.raddr.ip}:{c.raddr.port}" if c.raddr else "—"
+        proto = "TCP" if c.type == socket.SOCK_STREAM else "UDP"
+
+        pid_str, proc_name = str(c.pid or "—"), "—"
+        if c.pid:
+            try:
+                proc_name = psutil.Process(c.pid).name()[:18]
+            except (psutil.NoSuchProcess, psutil.AccessDenied): pass
+
+        sc = STATE_COLORS.get(status, "white")
+        rows.append((proto, laddr, raddr, f"[{sc}]{status}[/{sc}]", pid_str, proc_name))
+
+    # Trier : ESTABLISHED en premier
+    order = ["ESTABLISHED","LISTEN","SYN_SENT","SYN_RECV","TIME_WAIT",
+             "CLOSE_WAIT","FIN_WAIT1","FIN_WAIT2","NONE"]
+    rows.sort(key=lambda r: (order.index(r[3].split("]")[1].split("[")[0]) 
+                              if any(s in r[3] for s in order) else 99, r[1]))
+
+    for row in rows:
+        t_ui.add_row(*row)
+
+    console.print(t_ui)
+    console.print()
+
+    # Résumé par état
+    summary = themed_table(border_style=col, show_header=False)
+    summary.add_column("État",  style=col, width=16)
+    summary.add_column("Nb",    style="bold white", width=6)
+    for st, nb in sorted(stats.items(), key=lambda x: -x[1]):
+        sc = STATE_COLORS.get(st, "white")
+        summary.add_row(f"[{sc}]{st}[/{sc}]", str(nb))
+    console.print(Align.center(summary))
+    info(f"{len(rows)} connexion(s) au total.")
+
+
+# ── 36 · FILE HASHER ────────────────────────────────────
+def file_hasher():
+    """Calcule les hash MD5/SHA256/SHA512 d'un fichier local."""
+    col = th()["primary"]
+
+    filepath = console.input(f"[{col}]  Chemin du fichier ❯ [/{col}]").strip()
+
+    # Expansion ~ et variables
+    filepath = os.path.expanduser(os.path.expandvars(filepath))
+
+    if not os.path.isfile(filepath):
+        error(f"Fichier introuvable : {filepath}")
+        return
+
+    size = os.path.getsize(filepath)
+    info(f"Fichier : {filepath}  ({size/1e6:.2f} MB)")
+
+    algos = {
+        "MD5":      hashlib.md5(),
+        "SHA1":     hashlib.sha1(),
+        "SHA256":   hashlib.sha256(),
+        "SHA512":   hashlib.sha512(),
+        "SHA3-256": hashlib.sha3_256(),
+        "BLAKE2b":  hashlib.blake2b(),
+    }
+
+    console.print(f"[dim {col}]  Calcul en cours...[/dim {col}]")
+    start = time.time()
+
+    try:
+        with open(filepath, "rb") as f:
+            chunk_size = 65536
+            while chunk := f.read(chunk_size):
+                for h in algos.values():
+                    h.update(chunk)
+    except PermissionError:
+        error(f"Accès refusé à {filepath}")
+        return
+    except Exception as e:
+        error(str(e))
+        return
+
+    elapsed = time.time() - start
+
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Algo",     style=col, width=12)
+    t_ui.add_column("Hash",     style="bold white", width=70)
+
+    for name, h in algos.items():
+        t_ui.add_row(name, h.hexdigest())
+
+    console.print(t_ui)
+
+    # Vérification optionnelle
+    console.print()
+    ref_hash = console.input(
+        f"[{col}]  Hash de référence à comparer [dim](vide = ignorer)[/dim] ❯ [/{col}]"
+    ).strip().lower()
+
+    if ref_hash:
+        found = False
+        for name, h in algos.items():
+            if h.hexdigest() == ref_hash:
+                success(f"Correspondance {name} ! Le fichier est intègre. ✔")
+                found = True
+                break
+        if not found:
+            error("Aucun hash ne correspond — fichier potentiellement corrompu ou altéré !")
+
+    info(f"Calculé en {elapsed:.2f}s  ({size/1e6/elapsed:.1f} MB/s)")
+
+
+# ── 37 · CRON INSPECTOR ─────────────────────────────────
+def cron_inspector():
+    """Affiche les tâches cron de l'utilisateur et du système."""
+    col = th()["primary"]
+    system = platform.system().lower()
+
+    if system == "windows":
+        console.print(f"[dim {col}]  Windows — récupération des tâches planifiées (schtasks)...[/dim {col}]\n")
+        try:
+            res = subprocess.run(
+                ["schtasks", "/query", "/fo", "LIST", "/v"],
+                capture_output=True, text=True, timeout=15
+            )
+            t_ui = themed_table(border_style=col)
+            t_ui.add_column("Tâche",    style="bold white", width=40)
+            t_ui.add_column("Statut",   width=14)
+            t_ui.add_column("Dernière", style="dim", width=22)
+            t_ui.add_column("Prochaine",style="dim", width=22)
+
+            task = {}
+            count = 0
+            for line in res.stdout.splitlines():
+                line = line.strip()
+                if line.startswith("TaskName:"):
+                    task["name"] = line.split(":", 1)[1].strip()
+                elif line.startswith("Status:"):
+                    task["status"] = line.split(":", 1)[1].strip()
+                elif line.startswith("Last Run Time:"):
+                    task["last"] = line.split(":", 1)[1].strip()
+                elif line.startswith("Next Run Time:"):
+                    task["next"] = line.split(":", 1)[1].strip()
+                    if task.get("name"):
+                        count += 1
+                        st = task.get("status","?")
+                        sc = "green" if "Running" in st or "Ready" in st else "dim"
+                        t_ui.add_row(task.get("name","?")[:40],
+                                     f"[{sc}]{st}[/{sc}]",
+                                     task.get("last","?")[:22],
+                                     task.get("next","?")[:22])
+                    task = {}
+
+            console.print(t_ui)
+            info(f"{count} tâche(s) planifiée(s) trouvée(s).")
+        except FileNotFoundError:
+            error("schtasks non disponible.")
+        except subprocess.TimeoutExpired:
+            error("Timeout lors de la récupération des tâches.")
+        return
+
+    # ── Linux / macOS ──
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Source",   style=col, width=22)
+    t_ui.add_column("Schedule", style="bold white", width=22)
+    t_ui.add_column("Commande", style="white", width=42)
+
+    count = 0
+
+    # 1. crontab de l'utilisateur courant
+    try:
+        res = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=5)
+        if res.returncode == 0 and res.stdout.strip():
+            for line in res.stdout.splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    parts = line.split(None, 5)
+                    if len(parts) >= 6:
+                        schedule = " ".join(parts[:5])
+                        command  = parts[5][:42]
+                    else:
+                        schedule = line[:20]; command = line[20:62]
+                    t_ui.add_row(f"[dim]crontab (user)[/dim]", schedule, command)
+                    count += 1
+        elif "no crontab" in (res.stderr or "").lower():
+            t_ui.add_row("[dim]crontab (user)[/dim]", "[dim]—[/dim]", "[dim]Vide[/dim]")
+    except FileNotFoundError:
+        t_ui.add_row("[dim]crontab[/dim]", "[red]indisponible[/red]", "—")
+
+    # 2. Fichiers cron système
+    CRON_DIRS = [
+        "/etc/cron.d", "/etc/cron.daily", "/etc/cron.hourly",
+        "/etc/cron.weekly", "/etc/cron.monthly"
+    ]
+
+    for cron_dir in CRON_DIRS:
+        if not os.path.isdir(cron_dir): continue
+        short_dir = os.path.basename(cron_dir)
+        for fname in sorted(os.listdir(cron_dir)):
+            fpath = os.path.join(cron_dir, fname)
+            if not os.path.isfile(fpath): continue
+            try:
+                with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and not line.startswith("PATH"):
+                            parts = line.split(None, 6)
+                            if len(parts) >= 6:
+                                schedule = " ".join(parts[:5])
+                                command  = " ".join(parts[5:])[:42]
+                                t_ui.add_row(f"[dim]{short_dir}/{fname}[/dim]", schedule, command)
+                                count += 1
+            except PermissionError:
+                t_ui.add_row(f"[dim]{short_dir}/{fname}[/dim]", "[red]accès refusé[/red]", "—")
+
+    # 3. /etc/crontab
+    if os.path.isfile("/etc/crontab"):
+        try:
+            with open("/etc/crontab", "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and not line.startswith("PATH") \
+                       and not line.startswith("SHELL") and not line.startswith("HOME"):
+                        parts = line.split(None, 7)
+                        if len(parts) >= 7:
+                            schedule = " ".join(parts[:5])
+                            command  = " ".join(parts[6:])[:42]
+                            t_ui.add_row("[dim]/etc/crontab[/dim]", schedule, command)
+                            count += 1
+        except PermissionError:
+            t_ui.add_row("[dim]/etc/crontab[/dim]", "[red]accès refusé[/red]", "—")
+
+    if count == 0:
+        t_ui.add_row("—", "[dim]Aucune tâche trouvée[/dim]", "—")
+
+    console.print(t_ui)
+    info(f"{count} tâche(s) cron trouvée(s).")
+    if not is_admin():
+        info("Lancez en root pour voir toutes les crontabs système.")
+
+
+# ═══════════════════════════════════════════════════════
+#  ROUTER
+# ═══════════════════════════════════════════════════════
 ACTIONS = {
-    "01": system_info, "1": system_info, "02": cpu_info, "2": cpu_info,
-    "03": ram_info, "3": ram_info, "04": disk_info, "4": disk_info,
-    "05": uptime_info, "5": uptime_info, "06": export_sys, "6": export_sys,
-    "07": network_info, "7": network_info, "08": ping_test, "8": ping_test,
-    "09": net_stats, "9": net_stats, "10": dns_lookup, "11": port_checker, "12": scan_lan,
-    "13": live_monitor, "14": top_processes,
-    "15": hash_gen, "16": password_gen, "17": pass_checker, "18": base64_tool, "19": clean_temp,
-    "20": toggle_lang, "21": traceroute, "22": whois_geoip, "23": qr_ascii,
-    "24": converter, "25": suspicious_processes, "26": speedtest_basic,
-    "27": change_theme, "28": show_history,
+    # Système
+    "01": system_info,  "1": system_info,
+    "02": cpu_info,     "2": cpu_info,
+    "03": ram_info,     "3": ram_info,
+    "04": disk_info,    "4": disk_info,
+    "05": uptime_info,  "5": uptime_info,
+    "06": export_sys,   "6": export_sys,
+    # Réseau
+    "07": network_info, "7": network_info,
+    "08": ping_test,    "8": ping_test,
+    "09": net_stats,    "9": net_stats,
+    "10": dns_lookup,
+    "11": port_checker,
+    "12": scan_lan,
+    # Monitoring
+    "13": live_monitor,
+    "14": top_processes,
+    # Utilitaires
+    "15": hash_gen,
+    "16": password_gen,
+    "17": pass_checker,
+    "18": base64_tool,
+    "19": clean_temp,
+    # Avancé
+    "20": toggle_lang,
+    "21": traceroute,
+    "22": whois_geoip,
+    "23": qr_ascii,
+    "24": converter,
+    "25": suspicious_processes,
+    "26": speedtest_basic,
+    "27": change_theme,
+    "28": show_history,
+    # ── NOUVEAU v4.1 ──
+    "29": firewall_rules,
+    "30": ssh_audit,
+    "31": watcher_logs,
+    "32": services_manager,
+    "33": env_inspector,
+    "34": arp_table,
+    "35": net_connections,
+    "36": file_hasher,
+    "37": cron_inspector,
 }
 
-# ── MAIN ─────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════
+#  MAIN
+# ═══════════════════════════════════════════════════════
 def main():
     while True:
         banner()

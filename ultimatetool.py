@@ -729,4 +729,257 @@ def pass_checker():
     lvl_col = "red" if score < 40 else "yellow" if score < 70 else "green" if score < 90 else "bright_green"
     t_ui.add_row("Score Global", f"[{lvl_col}]{lvl}[/{lvl_col}]", f"[bold]{score}/100[/bold]")
     t_ui.add_row("", f"{pct_bar(score, 14)}", "")
-    console.
+    console.print(t_ui)
+
+def base64_tool():
+    col = th()["cat_uti"]
+    mode = console.input(f"[{col}]  (e)ncode / (d)ecode ❯ [/{col}]").strip().lower()
+    text = console.input(f"[{col}]  Texte ❯ [/{col}]")
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Action", style=col, width=10)
+    t_ui.add_column("Résultat", style="white", width=64)
+    try:
+        if mode in ("e","encode"): t_ui.add_row("Encodé", base64.b64encode(text.encode()).decode())
+        else: t_ui.add_row("Décodé", base64.b64decode(text.encode()).decode())
+    except Exception as e: t_ui.add_row(f"[red]Erreur[/red]", str(e))
+    console.print(t_ui)
+
+def clean_temp():
+    col = th()["cat_uti"]
+    console.print(f"[dim {col}]  Nettoyage des fichiers temporaires en cours...[/dim {col}]")
+    count = 0
+    temp_dirs = []
+    
+    if os.name == "nt":
+        temp_dirs = [os.environ.get("TEMP"), os.environ.get("TMP"), "C:\\Windows\\Temp"]
+    else:
+        temp_dirs = ["/tmp", "/var/tmp"]
+
+    for temp_dir in temp_dirs:
+        if not temp_dir or not os.path.exists(temp_dir): 
+            continue
+        for root, dirs, files in os.walk(temp_dir, topdown=False):
+            for name in files:
+                try:
+                    os.remove(os.path.join(root, name))
+                    count += 1
+                except Exception: 
+                    pass
+            for name in dirs:
+                try:
+                    os.rmdir(os.path.join(root, name))
+                except Exception: 
+                    pass
+                    
+    success(f"Fichiers temporaires nettoyés ({count} éléments supprimés de manière sécurisée) !")
+
+# ═══════════════════════════════════════════════════════
+#  FEATURES AVANCÉES (NOUVELLES)
+# ═══════════════════════════════════════════════════════
+
+def traceroute():
+    col  = th()["cat_adv"]
+    host = console.input(f"[{col}]  Cible [dim](default: 8.8.8.8)[/dim] ❯ [/{col}]").strip() or "8.8.8.8"
+    console.print(f"\n[dim {col}]Traceroute → {host}...[/dim {col}]\n")
+    cmd = (["tracert", host] if platform.system().lower() == "windows" else ["traceroute", "-m", "20", host])
+    try: subprocess.run(cmd)
+    except FileNotFoundError: error("traceroute/tracert non disponible sur ce système.")
+
+def whois_geoip():
+    col  = th()["cat_adv"]
+    host = console.input(f"[{col}]  IP ou Domaine ❯ [/{col}]").strip()
+    if not host: return
+    try: ip = socket.gethostbyname(host)
+    except Exception: ip = host
+
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Champ", style=col, width=22)
+    t_ui.add_column("Valeur", style="white", width=54)
+    t_ui.add_row("Cible", host)
+    t_ui.add_row("IP", ip)
+
+    try:
+        safe_ip = urllib.parse.quote(ip)
+        req = urllib.request.Request(f"https://ipinfo.io/{safe_ip}/json", headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        fields = [
+            ("Hostname", "hostname"), ("Ville", "city"), ("Région","region"),
+            ("Pays", "country"), ("Postal", "postal"), ("Org", "org"),
+            ("Fuseau", "timezone"), ("Coords", "loc"),
+        ]
+        for label, key in fields:
+            val = data.get(key, "—")
+            if val and val != "—": t_ui.add_row(label, str(val))
+    except Exception as e: t_ui.add_row("Erreur GeoIP", str(e))
+
+    console.print(t_ui)
+
+def qr_ascii():
+    col  = th()["cat_adv"]
+    text = console.input(f"[{col}]  Texte/URL pour QR ❯ [/{col}]").strip()
+    if not text: return
+
+    seed = int(hashlib.md5(text.encode()).hexdigest(), 16)
+    rng, size = random.Random(seed), 21
+
+    console.print(f"\n  [dim]QR ASCII pour : [bold]{text[:40]}[/bold][/dim]\n")
+    pri = th()["primary"]
+    finder = set()
+    for r in range(7):
+        for c in range(7):
+            finder.update([(r, c), (r, size-7+c), (size-7+r, c)])
+
+    line_top = f"  [bold {pri}]{'██' * (size + 2)}[/bold {pri}]"
+    console.print(line_top)
+    for row in range(size):
+        line = f"  [bold {pri}]██[/bold {pri}]"
+        for col_i in range(size):
+            if (row, col_i) in finder: line += f"[bold {pri}]██[/bold {pri}]"
+            else: line += f"[bold {pri}]██[/bold {pri}]" if rng.randint(0, 1) else "  "
+        line += f"[bold {pri}]██[/bold {pri}]"
+        console.print(line)
+    console.print(line_top)
+    console.print()
+    info("Pour un vrai QR Code : pip install qrcode puis qr.make(text)")
+
+def converter():
+    col = th()["cat_adv"]
+    console.print(f"  [{col}]Catégories :[/{col}]  [dim]1[/dim] Octets  [dim]2[/dim] Temps  [dim]3[/dim] Température  [dim]4[/dim] Débit réseau")
+    cat = console.input(f"[{col}]  Catégorie ❯ [/{col}]").strip()
+
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Unité", style=col, width=22)
+    t_ui.add_column("Valeur", style="bold white", width=30)
+
+    raw = console.input(f"[{col}]  Valeur ❯ [/{col}]").strip()
+    try: n = float(raw)
+    except ValueError: error("Valeur invalide."); return
+
+    if cat == "1":
+        t_ui.add_row("Bytes", f"{n:,.0f}"); t_ui.add_row("Megabytes", f"{n/1e6:,.3f}")
+        t_ui.add_row("Gigabytes", f"{n/1e9:,.3f}"); t_ui.add_row("Gibibytes", f"{n/1073741824:,.6f}")
+    elif cat == "2":
+        h, rem = divmod(n, 3600); m, s = divmod(rem, 60)
+        t_ui.add_row("Heures", f"{n/3600:,.6f}"); t_ui.add_row("Formaté", f"{int(h)}h {int(m)}m {s:.2f}s")
+    elif cat == "3":
+        t_ui.add_row("Celsius", f"{n:.2f} °C"); t_ui.add_row("Fahrenheit", f"{n*9/5+32:.2f} °F")
+    elif cat == "4":
+        t_ui.add_row("Mbps", f"{n:,.2f}"); t_ui.add_row("MB/s", f"{n/8:,.3f}")
+    else: error("Catégorie invalide."); return
+
+    console.print(t_ui)
+
+def suspicious_processes():
+    col = th()["cat_adv"]
+    SUSPECT_NAMES = {"nc","ncat","netcat","nmap","masscan","wireshark","tcpdump","mimikatz","msfconsole","msfvenom","hydra","john","hashcat","aircrack","aireplay","airmon","ettercap","bettercap","responder","sqlmap","burpsuite","metasploit","cobaltstrike","empire","rat","keylogger","stealer","cryptominer","xmrig","minergate"}
+    SUSPECT_PORTS = {4444, 1337, 31337, 6666, 8888, 9999, 12345, 54321, 65535}
+
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("PID", style="dim", width=8); t_ui.add_column("Nom", style="bold white", width=22)
+    t_ui.add_column("Raison", style="yellow", width=26); t_ui.add_column("User", style="dim", width=14); t_ui.add_column("CMD", style="dim", width=26)
+
+    found = 0
+    for p in psutil.process_iter(["pid","name","username","cmdline","connections"]):
+        try:
+            info_p, name_l, reasons = p.info, (p.info.get("name") or "").lower(), []
+            for s in SUSPECT_NAMES:
+                if s in name_l: reasons.append(f"[yellow]nom '{s}'[/yellow]"); break
+            try:
+                for conn in (info_p.get("connections") or []):
+                    if hasattr(conn, "laddr") and conn.laddr and conn.laddr.port in SUSPECT_PORTS: reasons.append(f"[red]port {conn.laddr.port}[/red]")
+                    if hasattr(conn, "raddr") and conn.raddr and conn.raddr.port in SUSPECT_PORTS: reasons.append(f"[red]→ port {conn.raddr.port}[/red]")
+            except (psutil.AccessDenied, psutil.NoSuchProcess): pass
+            if reasons:
+                found += 1
+                t_ui.add_row(str(info_p["pid"]), (info_p.get("name") or "?")[:22], ", ".join(reasons[:2]), (info_p.get("username") or "?")[:14], " ".join((info_p.get("cmdline") or []))[:26])
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess): pass
+
+    if found == 0: t_ui.add_row("—", "[green]Aucun suspect détecté[/green]", "—", "—", "—")
+    console.print(t_ui)
+    if found > 0: console.print(f"\n  [{th()['warning']}]⚠  {found} processus suspect(s) trouvé(s) — vérifiez manuellement.[/{th()['warning']}]")
+
+def speedtest_basic():
+    col = th()["cat_adv"]
+    console.print(f"\n[dim {col}]Test de débit en cours (téléchargement)...[/dim {col}]\n")
+    TEST_URL, FALLBACK = "http://speedtest.tele2.net/1MB.zip", "https://httpbin.org/bytes/524288"
+
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Métrique", style=col, width=22); t_ui.add_column("Valeur", style="bold white", width=30)
+
+    try:
+        start = time.time(); urllib.request.urlopen("https://www.google.com", timeout=3)
+        t_ui.add_row("Latence HTTP (Google)", f"{(time.time() - start) * 1000:.0f} ms")
+    except Exception: t_ui.add_row("Latence HTTP", "[red]N/A[/red]")
+
+    for url, label in [(TEST_URL, "1MB.zip"), (FALLBACK, "512KB httpbin")]:
+        try:
+            start = time.time()
+            with urllib.request.urlopen(url, timeout=10) as resp: data = resp.read()
+            duration, size_mb = time.time() - start, len(data) / 1e6
+            t_ui.add_row(f"Download ({label})", f"[bold green]{size_mb / duration * 8:.2f} Mbps[/bold green]  [dim]({size_mb:.2f}MB en {duration:.1f}s)[/dim]")
+            break
+        except Exception as e: t_ui.add_row(f"Download ({label})", f"[red]Erreur : {e}[/red]")
+
+    t_ui.add_row("─"*20, "─"*28)
+    t_ui.add_row("[dim]Note[/dim]", "[dim]Test minimal — pour un vrai speedtest : speedtest-cli[/dim]")
+    console.print(t_ui)
+
+def show_history():
+    col = th()["cat_adv"]
+    if not CMD_HISTORY: info("Aucune commande dans l'historique."); return
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("#", style=f"dim {col}", width=6); t_ui.add_column("Commande", style="white", width=20); t_ui.add_column("Label", style="dim", width=30)
+    for i, cmd in enumerate(CMD_HISTORY, 1):
+        label, _ = _color_for(cmd)
+        t_ui.add_row(str(i), cmd, label)
+    console.print(t_ui)
+
+def change_theme():
+    global CURRENT_THEME_IDX
+    old_name = th()["name"]
+    CURRENT_THEME_IDX = (CURRENT_THEME_IDX + 1) % len(THEME_NAMES)
+    success(f"Thème : [bold]{old_name}[/bold] → [bold]{th()['name']}[/bold]")
+    time.sleep(0.8)
+
+# ── ROUTER ───────────────────────────────────────────────
+ACTIONS = {
+    "01": system_info, "1": system_info, "02": cpu_info, "2": cpu_info,
+    "03": ram_info, "3": ram_info, "04": disk_info, "4": disk_info,
+    "05": uptime_info, "5": uptime_info, "06": export_sys, "6": export_sys,
+    "07": network_info, "7": network_info, "08": ping_test, "8": ping_test,
+    "09": net_stats, "9": net_stats, "10": dns_lookup, "11": port_checker, "12": scan_lan,
+    "13": live_monitor, "14": top_processes,
+    "15": hash_gen, "16": password_gen, "17": pass_checker, "18": base64_tool, "19": clean_temp,
+    "20": toggle_lang, "21": traceroute, "22": whois_geoip, "23": qr_ascii,
+    "24": converter, "25": suspicious_processes, "26": speedtest_basic,
+    "27": change_theme, "28": show_history,
+}
+
+# ── MAIN ─────────────────────────────────────────────────
+def main():
+    while True:
+        banner()
+        choice = draw_menu()
+
+        if choice in ("00","0","quit","q","exit"):
+            clr()
+            console.print(f"\n{Align.center(f'[bold {th()['primary']}]{t('bye')}[/bold {th()['primary']}]')}\n")
+            break
+
+        fn = ACTIONS.get(choice)
+        if fn:
+            if choice in ("20", "27"):
+                fn(); continue
+            label, color = _color_for(choice)
+            section(label, color)
+            fn()
+        else:
+            console.print(f"  [{th()['danger']}]{t('err')}[/{th()['danger']}]")
+            time.sleep(0.6)
+            continue
+        pause()
+
+if __name__ == "__main__":
+    try: main()
+    except KeyboardInterrupt: clr(); sys.exit(0)

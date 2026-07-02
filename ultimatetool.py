@@ -65,7 +65,7 @@ LANG         = "fr"
 CMD_HISTORY  = deque(maxlen=20)
 
 # ── AUTO-UPDATE (GitHub Releases) ─────────────────────────
-GITHUB_REPO          = "TON_USER/TON_REPO"   # <-- remplace par ex. "jdupont/ultimatetool"
+GITHUB_REPO          = "Loeylbs/weak-too"   # <-- remplace par ex. "jdupont/ultimatetool"
 UPDATE_CHECK_TIMEOUT = 5                     # secondes, requete API GitHub
 UPDATE_DL_TIMEOUT    = 20                    # secondes, telechargement du fichier
 UPDATE_CONFIG_PATH   = os.path.join(

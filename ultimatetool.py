@@ -65,9 +65,9 @@ LANG         = "fr"
 CMD_HISTORY  = deque(maxlen=20)
 
 # ── AUTO-UPDATE (GitHub Releases) ─────────────────────────
-GITHUB_REPO          = "Loeylbs/weak-too"   # <-- remplace par ex. "jdupont/ultimatetool"
-UPDATE_CHECK_TIMEOUT = 5                     # secondes, requete API GitHub
-UPDATE_DL_TIMEOUT    = 20                    # secondes, telechargement du fichier
+GITHUB_REPO          = "Loeylbs/weak-too"   
+UPDATE_CHECK_TIMEOUT = 5                     
+UPDATE_DL_TIMEOUT    = 20                   
 UPDATE_CONFIG_PATH   = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), f".{TOOL_NAME}_update.json"
 )

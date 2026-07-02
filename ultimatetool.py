@@ -8,7 +8,7 @@
   ██║     ██║  ██║██║██║ ╚═╝ ██║███████╗
   ╚═╝     ╚═╝  ╚═╝╚═╝╚═╝     ╚═╝╚══════╝
 
-  weakdye TOOL v4.2.0 — Multi-Tool Terminal UPGRADED
+  weakdye TOOL v4.3.0 — Multi-Tool Terminal UPGRADED
 """
 
 import os
@@ -788,7 +788,7 @@ def dns_lookup():
     except Exception as e: t_ui.add_row("Erreur IPv4", str(e))
     try:
         for item in socket.getaddrinfo(host, None):
-            if item[0].name == "AF_INET6":
+            if item[0] == socket.AF_INET6:
                 t_ui.add_row("IPv6", item[4][0])
                 break
     except Exception: pass
@@ -1172,9 +1172,9 @@ def suspicious_processes():
                 if s in name_l: reasons.append(f"[yellow]nom '{s}'[/yellow]"); break
             try:
                 for conn in (info_p.get("connections") or []):
-                    if hasattr(conn,"laddr") and conn.laddr and conn.laddr.port in SUSPECT_PORTS:
+                    if hasattr(conn,"laddr") and conn.laddr and hasattr(conn.laddr, "port") and conn.laddr.port in SUSPECT_PORTS:
                         reasons.append(f"[red]port {conn.laddr.port}[/red]")
-                    if hasattr(conn,"raddr") and conn.raddr and conn.raddr.port in SUSPECT_PORTS:
+                    if hasattr(conn,"raddr") and conn.raddr and hasattr(conn.raddr, "port") and conn.raddr.port in SUSPECT_PORTS:
                         reasons.append(f"[red]→ port {conn.raddr.port}[/red]")
             except (psutil.AccessDenied, psutil.NoSuchProcess): pass
             if reasons:
@@ -1372,7 +1372,7 @@ def ssh_audit():
                     line = line.strip()
                     if line and not line.startswith("#"):
                         parts = line.split(None, 1)
-                        if len(parts) == 2: config[parts[0]] = parts[1].strip()
+                        if len(parts) == 2: config[parts[0].lower()] = parts[1].strip()
         except PermissionError: warn(f"Accès refusé à {conf_path} — lancez en root.")
 
         t_ui.add_row(f"[dim]Fichier[/dim]", conf_path, "[dim]—[/dim]", "")
@@ -1380,8 +1380,9 @@ def ssh_audit():
 
         score, total = 0, 0
         for param, (recommended, hint, exact) in CHECKS.items():
-            val = config.get(param, "[dim]non défini[/dim]")
-            raw = config.get(param, "")
+            param_lower = param.lower()
+            val = config.get(param_lower, "[dim]non défini[/dim]")
+            raw = config.get(param_lower, "")
             total += 1
             if exact: ok = (raw.lower() == recommended.lower())
             else:
@@ -1462,307 +1463,4 @@ def watcher_logs():
                 line = f.readline()
                 if line: console.print(f"  [{th()['dim_col']}]{datetime.now().strftime('%H:%M:%S')}[/{th()['dim_col']}]  {colorize(line.rstrip())}")
                 else: time.sleep(0.3)
-    except KeyboardInterrupt: console.print(f"\n[{col}]  Watcher arrêté.[/{col}]")
-    except PermissionError: error(f"Accès refusé.")
-
-def services_manager():
-    col = th()["primary"]
-    system = platform.system().lower()
-    t_ui = themed_table(border_style=col)
-    t_ui.add_column("Service",  style="bold white", width=30)
-    t_ui.add_column("Statut",   width=14)
-    t_ui.add_column("Type",     style="dim", width=10)
-    t_ui.add_column("PID",      style="dim", width=8)
-    t_ui.add_column("Description", style="dim", width=28)
-
-    if system == "windows":
-        try:
-            result = subprocess.run(["sc", "query", "type=", "all", "state=", "all"], capture_output=True, text=True, timeout=10)
-            svc, count = {}, 0
-            for line in result.stdout.splitlines():
-                line = line.strip()
-                if line.startswith("SERVICE_NAME:"): svc["name"] = line.split(":", 1)[1].strip()
-                elif line.startswith("STATE"): svc["state"] = line.split(":", 1)[1].strip().split()[1] if len(line.split(":", 1)[1].strip().split()) > 1 else line.split(":", 1)[1].strip()
-                elif line.startswith("DISPLAY_NAME:"):
-                    svc["display"] = line.split(":", 1)[1].strip()
-                    if svc.get("name"):
-                        count += 1
-                        sc = f"[green]▶ RUNNING[/green]" if svc.get("state","") == "RUNNING" else f"[red]■ {svc.get('state','?')}[/red]"
-                        t_ui.add_row(svc.get("name","?")[:30], sc, "win32", "—", svc.get("display","?")[:28])
-                    svc = {}
-            info(f"{count} services listés.")
-        except Exception as e: error(f"Erreur : {e}")
-    else:
-        try:
-            result = subprocess.run(["systemctl", "list-units", "--type=service", "--all", "--no-pager", "--plain", "--no-legend"], capture_output=True, text=True, timeout=10)
-            count = 0
-            for line in result.stdout.splitlines():
-                parts = line.split()
-                if len(parts) < 4: continue
-                name, load, active, sub = parts[0], parts[1], parts[2], parts[3]
-                desc = " ".join(parts[4:])[:28] if len(parts) > 4 else "—"
-                status_str = f"[green]▶ active[/green]" if active == "active" else f"[red]✘ failed[/red]" if active == "failed" else f"[dim]■ inactive[/dim]" if active == "inactive" else f"[yellow]{active}[/yellow]"
-                pid_str = "—"
-                try:
-                    pid_res = subprocess.run(["systemctl", "show", name, "--property=MainPID"], capture_output=True, text=True, timeout=2)
-                    for l2 in pid_res.stdout.splitlines():
-                        if l2.startswith("MainPID="):
-                            pid_val = l2.split("=")[1].strip()
-                            if pid_val and pid_val != "0": pid_str = pid_val
-                except Exception: pass
-                t_ui.add_row(name[:30], status_str, sub[:10], pid_str, desc)
-                count += 1
-            info(f"{count} service(s) trouvé(s).")
-        except FileNotFoundError: error("systemctl non disponible.")
-        except subprocess.TimeoutExpired: error("Timeout.")
-
-    console.print(t_ui)
-    console.print()
-    action_svc = console.input(f"[{col}]  Nom de service à inspecter [dim](vide = ignorer)[/dim] ❯ [/{col}]").strip()
-    if action_svc:
-        try:
-            res = subprocess.run(["systemctl", "status", action_svc, "--no-pager"], capture_output=True, text=True, timeout=5)
-            console.print(Rule(f"[{col}]status : {action_svc}[/{col}]", style=f"dim {col}"))
-            console.print(res.stdout or res.stderr)
-        except Exception: pass
-
-def env_inspector():
-    col = th()["primary"]
-    SENSITIVE = {"password","passwd","secret","token","key","api_key","apikey","auth","credential","private","cert","ssl","pass","pwd"}
-    filtr = console.input(f"[{col}]  Filtre [dim](vide = tout afficher)[/dim] ❯ [/{col}]").strip().lower()
-    t_ui = themed_table(border_style=col)
-    t_ui.add_column("Variable", style=col, width=30)
-    t_ui.add_column("Valeur",   style="white", width=56)
-
-    count = 0
-    for key, val in sorted(os.environ.items()):
-        if filtr and filtr not in key.lower() and filtr not in val.lower(): continue
-        is_sensitive = any(s in key.lower() for s in SENSITIVE)
-        display_val = f"[red]{'*' * min(len(val), 20)}  [dim](masqué)[/dim][/red]" if is_sensitive else val[:56]
-        t_ui.add_row(key, display_val)
-        count += 1
-
-    console.print(t_ui)
-    info(f"{count} variable(s) affichée(s).")
-
-def arp_table():
-    col = th()["primary"]
-    t_ui = themed_table(border_style=col)
-    t_ui.add_column("IP",        style=col, width=20)
-    t_ui.add_column("MAC",       style="bold white", width=22)
-    t_ui.add_column("Interface", style="dim", width=14)
-    t_ui.add_column("Type",      style="dim", width=10)
-    t_ui.add_column("Alerte",    width=14)
-    entries = []
-
-    if platform.system().lower() == "windows":
-        try:
-            res = subprocess.run(["arp", "-a"], capture_output=True, text=True, timeout=5)
-            iface = "?"
-            for line in res.stdout.splitlines():
-                line = line.strip()
-                if line.startswith("Interface:"): iface = line.split()[1]
-                elif "dynamic" in line.lower() or "static" in line.lower():
-                    parts = line.split()
-                    if len(parts) >= 3: entries.append({"ip": parts[0], "mac": parts[1], "type": parts[2], "iface": iface})
-        except Exception as e: error(str(e)); return
-    else:
-        try:
-            res = subprocess.run(["arp", "-n"], capture_output=True, text=True, timeout=5)
-            for line in res.stdout.splitlines()[1:]:
-                parts = line.split()
-                if len(parts) >= 3 and parts[2] != "(incomplete)": entries.append({"ip": parts[0], "mac": parts[2], "type": "dynamic", "iface": parts[-1] if len(parts) >= 5 else "?"})
-        except FileNotFoundError: pass
-
-    mac_count = {}
-    for e in entries: mac_count[e["mac"]] = mac_count.get(e["mac"], 0) + 1
-
-    dupes = 0
-    for e in entries:
-        is_dupe = mac_count.get(e["mac"], 1) > 1
-        alerte = "[red]⚠ ARP SPOOF?[/red]" if is_dupe else "[green]OK[/green]"
-        if is_dupe: dupes += 1
-        t_ui.add_row(e["ip"], e["mac"], e.get("iface","?"), e["type"], alerte)
-
-    console.print(t_ui)
-    info(f"{len(entries)} entrée(s) ARP.")
-
-def net_connections():
-    col = th()["primary"]
-    t_ui = themed_table(border_style=col)
-    t_ui.add_column("Proto",     style=col, width=8)
-    t_ui.add_column("Local",     style="white", width=24)
-    t_ui.add_column("Distant",   style="white", width=24)
-    t_ui.add_column("État",      width=14)
-    t_ui.add_column("PID",       style="dim", width=8)
-    t_ui.add_column("Process",   style="dim", width=18)
-    STATE_COLORS = {"ESTABLISHED": "green", "LISTEN": "cyan", "TIME_WAIT": "yellow", "CLOSE_WAIT": "yellow"}
-
-    stats, rows = {}, []
-    try: conns = psutil.net_connections(kind="all")
-    except psutil.AccessDenied: conns = psutil.net_connections(kind="inet")
-
-    for c in conns:
-        status = getattr(c, "status", "NONE") or "NONE"
-        stats[status] = stats.get(status, 0) + 1
-        laddr = f"{c.laddr.ip}:{c.laddr.port}" if c.laddr else "—"
-        raddr = f"{c.raddr.ip}:{c.raddr.port}" if c.raddr else "—"
-        proto = "TCP" if c.type == socket.SOCK_STREAM else "UDP"
-        pid_str, proc_name = str(c.pid or "—"), "—"
-        if c.pid:
-            try: proc_name = psutil.Process(c.pid).name()[:18]
-            except Exception: pass
-        sc = STATE_COLORS.get(status, "white")
-        rows.append((proto, laddr, raddr, f"[{sc}]{status}[/{sc}]", pid_str, proc_name))
-
-    for row in sorted(rows, key=lambda r: r[3]): t_ui.add_row(*row)
-    console.print(t_ui)
-
-def file_hasher():
-    col = th()["primary"]
-    filepath = console.input(f"[{col}]  Chemin du fichier ❯ [/{col}]").strip()
-    filepath = os.path.expanduser(os.path.expandvars(filepath))
-    if not os.path.isfile(filepath): error(f"Fichier introuvable : {filepath}"); return
-    size = os.path.getsize(filepath)
-    algos = { "MD5": hashlib.md5(), "SHA256": hashlib.sha256(), "SHA512": hashlib.sha512() }
-    start = time.time()
-    try:
-        with open(filepath, "rb") as f:
-            while chunk := f.read(65536):
-                for h in algos.values(): h.update(chunk)
-    except Exception as e: error(str(e)); return
-
-    t_ui = themed_table(border_style=col)
-    t_ui.add_column("Algo", style=col, width=12)
-    t_ui.add_column("Hash", style="bold white", width=70)
-    for name, h in algos.items(): t_ui.add_row(name, h.hexdigest())
-    console.print(t_ui)
-
-def cron_inspector():
-    col = th()["primary"]
-    if platform.system().lower() == "windows":
-        try:
-            res = subprocess.run(["schtasks", "/query", "/fo", "LIST", "/v"], capture_output=True, text=True, timeout=15)
-            console.print(f"[dim {col}]  Récupération des tâches planifiées...[/dim {col}]\n")
-            # Logic simplified due to scale
-            info("Analyse réussie, mais affichage massif - redirigez la sortie de 'schtasks' pour plus de confort.")
-        except Exception as e: error(str(e))
-    else:
-        try:
-            res = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=5)
-            console.print(f"[{col}]Crontab Utilisateur :[/{col}]\n{res.stdout}")
-        except Exception: pass
-
-def subnet_calc():
-    col = th()["primary"]
-    cidr = console.input(f"[{col}]  Réseau (ex: 192.168.1.0/24) ❯ [/{col}]").strip()
-    try:
-        net = ipaddress.ip_network(cidr, strict=False)
-        t_ui = themed_table(border_style=col)
-        t_ui.add_column("Propriété", style=col)
-        t_ui.add_column("Valeur", style="white")
-        t_ui.add_row("Réseau", str(net.network_address))
-        t_ui.add_row("Masque", str(net.netmask))
-        t_ui.add_row("Wildcard", str(net.hostmask))
-        t_ui.add_row("Broadcast", str(net.broadcast_address))
-        t_ui.add_row("Hôtes max", str(net.num_addresses - 2))
-        t_ui.add_row("Plage IP", f"{net.network_address + 1} - {net.broadcast_address - 1}")
-        console.print(t_ui)
-    except Exception as e:
-        error(f"Erreur de format : {e}")
-
-def mac_lookup():
-    col = th()["primary"]
-    mac = console.input(f"[{col}]  Adresse MAC ❯ [/{col}]").strip()
-    try:
-        req = urllib.request.Request(f"https://api.macvendors.com/{mac}")
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            vendor = resp.read().decode()
-        success(f"Vendeur : [bold white]{vendor}[/bold white]")
-    except urllib.error.HTTPError:
-        error("Vendeur introuvable ou requête trop fréquente (API rate limit).")
-    except Exception as e:
-        error(f"Erreur réseau : {e}")
-
-# ═══════════════════════════════════════════════════════
-#  ROUTER
-# ═══════════════════════════════════════════════════════
-ACTIONS = {
-    # Système
-    "01": system_info,  "1": system_info,
-    "02": cpu_info,     "2": cpu_info,
-    "03": ram_info,     "3": ram_info,
-    "04": disk_info,    "4": disk_info,
-    "05": uptime_info,  "5": uptime_info,
-    "06": export_sys,   "6": export_sys,
-    # Réseau
-    "07": network_info, "7": network_info,
-    "08": ping_test,    "8": ping_test,
-    "09": net_stats,    "9": net_stats,
-    "10": dns_lookup,
-    "11": port_checker,
-    "12": scan_lan,
-    # Monitoring
-    "13": live_monitor,
-    "14": top_processes,
-    # Utilitaires
-    "15": hash_gen,
-    "16": password_gen,
-    "17": pass_checker,
-    "18": base64_tool,
-    "19": clean_temp,
-    # Avancé
-    "20": toggle_lang,
-    "21": traceroute,
-    "22": whois_geoip,
-    "23": qr_ascii,
-    "24": converter,
-    "25": suspicious_processes,
-    "26": speedtest_basic,
-    "27": change_theme,
-    "28": show_history,
-    # ── NOUVEAU v4.2 ──
-    "29": firewall_rules,
-    "30": ssh_audit,
-    "31": watcher_logs,
-    "32": services_manager,
-    "33": env_inspector,
-    "34": arp_table,
-    "35": net_connections,
-    "36": file_hasher,
-    "37": cron_inspector,
-    "38": subnet_calc,
-    "39": mac_lookup,
-}
-
-# ═══════════════════════════════════════════════════════
-#  MAIN
-# ═══════════════════════════════════════════════════════
-def main():
-    while True:
-        banner()
-        choice = draw_menu()
-
-        if choice in ("00","0","quit","q","exit"):
-            clr()
-            console.print(f"\n{Align.center(f'[bold {th()['primary']}]{t('bye')}[/bold {th()['primary']}]')}\n")
-            break
-
-        fn = ACTIONS.get(choice)
-        if fn:
-            if choice in ("20", "27"):
-                fn(); continue
-            label, color = _color_for(choice)
-            section(label, color)
-            fn()
-        else:
-            console.print(f"  [{th()['danger']}]{t('err')}[/{th()['danger']}]")
-            time.sleep(0.6)
-            continue
-        pause()
-
-if __name__ == "__main__":
-    try:
-        check_for_updates()
-        main()
-    except KeyboardInterrupt: clr(); sys.exit(0)
+    except KeyboardInterrupt: console.print(f"\n[{col}]  Watcher arrêté.

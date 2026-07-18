@@ -122,8 +122,8 @@ Dépendances (installées automatiquement si absentes) :
 ## Installation
 
 ```bash
-git clone https://github.com/Loeylbs/weak-too.git
-cd weak-too
+git clone https://github.com/Loeylbs/weak-tool.git
+cd weak-tool
 python3 ultimatetool.py
 ```
 
@@ -147,7 +147,7 @@ Tape le numéro de l'action souhaitée puis `Entrée` pour naviguer dans le menu
 
 ## Mise à jour automatique
 
-Au démarrage, l'outil vérifie si une nouvelle version est disponible dans les [releases GitHub](https://github.com/Loeylbs/weak-too/releases) du dépôt, et propose de la télécharger et de l'installer automatiquement.
+Au démarrage, l'outil vérifie si une nouvelle version est disponible dans les [releases GitHub](https://github.com/Loeylbs/weak-tool/releases) du dépôt, et propose de la télécharger et de l'installer automatiquement.
 
 ## Fichiers créés
 

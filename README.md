@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/version-4.2.0-brightgreen" alt="Version">
 </p>
 
-**weak-too** (nom affiché par défaut : *weakdye*, entièrement personnalisable) est un outil terminal tout-en-un pour l'administration système, le diagnostic réseau et le monitoring, écrit en Python avec une interface colorée grâce à [rich](https://github.com/Textualize/rich).
+**weak-tool** (nom affiché par défaut : *weakdye*, entièrement personnalisable) est un outil terminal tout-en-un pour l'administration système, le diagnostic réseau et le monitoring, écrit en Python avec une interface colorée grâce à [rich](https://github.com/Textualize/rich).
 
 Près de 40 fonctionnalités réparties en 6 catégories, 4 thèmes visuels, une mise à jour automatique depuis GitHub, et un pseudo d'affichage personnalisable.
 

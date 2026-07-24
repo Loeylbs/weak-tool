@@ -162,10 +162,6 @@ Le script crée quelques petits fichiers cachés à côté de lui pour mémorise
 
 Les fonctionnalités réseau (Scan LAN, Check Ports, ARP Table, Net Connections...) sont conçues pour auditer **tes propres systèmes et réseaux**. Utilise-les uniquement sur du matériel que tu possèdes ou pour lequel tu as une autorisation explicite.
 
-## Licence
-
-Aucune licence n'est définie pour ce dépôt. Ajoute un fichier `LICENSE` (par exemple [MIT](https://choosealicense.com/licenses/mit/)) si tu veux préciser les conditions de réutilisation du projet.
-
 ---
 
 <p align="center">Fait avec 🩷 par <a href="https://github.com/Loeylbs">Loeylbs</a></p>

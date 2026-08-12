@@ -706,6 +706,46 @@ def _spin_panel_render(title: str, color: str, items: list, width: int,
         out.append("\n")
     return out
 
+def _spin_menu_body(cats, width, wide, panel_w, phase, typed=""):
+    borders = [th()["border"]] * len(cats)
+    pri = th()["primary"]
+    dim = th()["dim_col"]
+
+    parts = [
+        Align.center(_spin_panel_render(*cats[0], panel_w, borders[0], phase)),
+        Align.center(_neon_line(width)),
+        Align.center(Text(". " * 24, style=dim)),
+    ]
+
+    if wide:
+        grid = Table.grid(padding=(0, 1))
+        grid.add_row(
+            _spin_panel_render(*cats[3], panel_w, borders[3], phase),
+            _spin_panel_render(*cats[2], panel_w, borders[2], phase),
+            _spin_panel_render(*cats[4], panel_w, borders[4], phase),
+            _spin_panel_render(*cats[1], panel_w, borders[1], phase),
+        )
+        parts.append(Align.center(grid))
+    else:
+        top = Table.grid(padding=(0, 1))
+        top.add_row(
+            _spin_panel_render(*cats[3], panel_w, borders[3], phase),
+            _spin_panel_render(*cats[4], panel_w, borders[4], phase),
+        )
+        middle = Table.grid(padding=(0, 1))
+        middle.add_row(
+            _spin_panel_render(*cats[2], panel_w, borders[2], phase),
+            _spin_panel_render(*cats[1], panel_w, borders[1], phase),
+        )
+        parts.append(Align.center(top))
+        parts.append(Align.center(Text(". " * 24, style=dim)))
+        parts.append(Align.center(middle))
+
+    parts.append(Align.center(Text("-" * min(width - 12, 112), style=dim)))
+    parts.append(Text(""))
+    parts.append(Align.center(Text(f"{t('prompt')}{typed}", style=f"bold {pri}")))
+    return Group(*parts)
+
 def _spin_menu_intro(cats, width, wide, panel_w):
     borders = [th()["border"]] * len(cats)
     dim = th()["dim_col"]
@@ -796,35 +836,107 @@ def _render_menu_frame(typed="", spin_intro=False):
     console.print(Align.center(Text(f"{t('prompt')}{typed}", style=f"bold {pri}")))
 
 def _animated_menu_input():
-    if os.name != "nt" or not sys.stdin.isatty():
-        _render_menu_frame("", spin_intro=True)
+    if not sys.stdin.isatty():
+        _render_menu_frame("")
         raw = console.input(f"[bold {th()['primary']}]{t('prompt')}[/bold {th()['primary']}]").strip()
         if raw:
             CMD_HISTORY.append(raw)
         return raw
 
-    import msvcrt
     typed = ""
-    _render_menu_frame(typed, spin_intro=True)
-    while True:
-        if msvcrt.kbhit():
+    phase = 0
+    last_spin = 0.0
+    term_state = None
+
+    if os.name == "nt":
+        import msvcrt
+
+        def read_key():
+            if not msvcrt.kbhit():
+                return None
             ch = msvcrt.getwch()
-            if ch in ("\r", "\n"):
-                raw = typed.strip()
-                if raw:
-                    CMD_HISTORY.append(raw)
-                return raw
-            if ch == "\x03":
-                raise KeyboardInterrupt
-            if ch == "\x08":
-                typed = typed[:-1]
-            elif ch in ("\x00", "\xe0"):
+            if ch in ("\x00", "\xe0"):
                 if msvcrt.kbhit():
                     msvcrt.getwch()
-            elif ch.isprintable():
-                typed += ch
-            _render_menu_frame(typed)
-        time.sleep(0.01)
+                return ""
+            return ch
+    else:
+        import select
+        import termios
+        import tty
+
+        fd = sys.stdin.fileno()
+        term_state = termios.tcgetattr(fd)
+        tty.setcbreak(fd)
+
+        def read_key():
+            ready, _, _ = select.select([sys.stdin], [], [], 0)
+            if not ready:
+                return None
+            return sys.stdin.read(1)
+
+    def handle_key(ch):
+        nonlocal typed
+        if ch in ("\r", "\n"):
+            raw = typed.strip()
+            if raw:
+                CMD_HISTORY.append(raw)
+            return raw
+        if ch == "\x03":
+            raise KeyboardInterrupt
+        if ch in ("\x08", "\x7f"):
+            typed = typed[:-1]
+        elif ch == "\x1b":
+            for _ in range(2):
+                if read_key() is None:
+                    break
+        elif ch.isprintable():
+            typed += ch
+        return None
+
+    try:
+        banner()
+        width = _screen_width()
+        wide = width >= 145
+        panel_w = 31 if wide else 34
+        cats = get_cats()
+        body = _spin_menu_body(cats, width, wide, panel_w, phase, typed)
+
+        with Live(body, console=console, refresh_per_second=20, transient=False) as live:
+            while True:
+                dirty = False
+
+                while True:
+                    ch = read_key()
+                    if ch is None:
+                        break
+                    if ch:
+                        result = handle_key(ch)
+                        if result is not None:
+                            return result
+                        dirty = True
+
+                current_width = _screen_width()
+                if current_width != width:
+                    width = current_width
+                    wide = width >= 145
+                    panel_w = 31 if wide else 34
+                    cats = get_cats()
+                    dirty = True
+
+                now = time.monotonic()
+                if now - last_spin >= MENU_ANIM_DELAY:
+                    phase += 3
+                    last_spin = now
+                    dirty = True
+
+                if dirty:
+                    live.update(_spin_menu_body(cats, width, wide, panel_w, phase, typed))
+
+                time.sleep(0.01)
+    finally:
+        if term_state is not None:
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, term_state)
 
 def draw_menu() -> str:
     return _animated_menu_input()
@@ -1776,6 +1888,29 @@ def watcher_logs():
     except KeyboardInterrupt: console.print(f"\n[{col}]  Watcher arrêté.[/{col}]")
     except PermissionError: error(f"Accès refusé.")
 
+def _run_capture_text(cmd, timeout=10):
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+    )
+
+    def decode(data):
+        if not data:
+            return ""
+        encodings = ["utf-8-sig", "cp850", "cp437", "cp1252"]
+        if os.name == "nt":
+            encodings.append("mbcs")
+        for encoding in encodings:
+            try:
+                return data.decode(encoding)
+            except (LookupError, UnicodeDecodeError):
+                pass
+        return data.decode("utf-8", errors="replace")
+
+    return result.returncode, decode(result.stdout), decode(result.stderr)
+
 def services_manager():
     col = th()["primary"]
     system = platform.system().lower()
@@ -1788,26 +1923,54 @@ def services_manager():
 
     if system == "windows":
         try:
-            result = subprocess.run(["sc", "query", "type=", "all", "state=", "all"], capture_output=True, text=True, timeout=10)
+            code, stdout, stderr = _run_capture_text(["sc.exe", "queryex", "type=", "service", "state=", "all"], timeout=10)
+            output = stdout or stderr
+            if code != 0 and stderr:
+                warn(stderr.strip()[:140])
             svc, count = {}, 0
-            for line in result.stdout.splitlines():
+
+            def add_service(row):
+                if not row.get("name"):
+                    return 0
+                state = row.get("state", "?")
+                status = f"[green]RUNNING[/green]" if state == "RUNNING" else f"[red]{state}[/red]"
+                pid = row.get("pid", "-")
+                if not pid or pid == "0":
+                    pid = "-"
+                t_ui.add_row(
+                    row.get("name", "?")[:30],
+                    status,
+                    row.get("type", "win32")[:10],
+                    pid[:8],
+                    row.get("display", "?")[:28],
+                )
+                return 1
+
+            for line in output.splitlines():
                 line = line.strip()
-                if line.startswith("SERVICE_NAME:"): svc["name"] = line.split(":", 1)[1].strip()
-                elif line.startswith("STATE"): svc["state"] = line.split(":", 1)[1].strip().split()[1] if len(line.split(":", 1)[1].strip().split()) > 1 else line.split(":", 1)[1].strip()
+                if line.startswith("SERVICE_NAME:"):
+                    count += add_service(svc)
+                    svc = {"name": line.split(":", 1)[1].strip()}
                 elif line.startswith("DISPLAY_NAME:"):
                     svc["display"] = line.split(":", 1)[1].strip()
-                    if svc.get("name"):
-                        count += 1
-                        sc = f"[green]▶ RUNNING[/green]" if svc.get("state","") == "RUNNING" else f"[red]■ {svc.get('state','?')}[/red]"
-                        t_ui.add_row(svc.get("name","?")[:30], sc, "win32", "—", svc.get("display","?")[:28])
-                    svc = {}
+                elif line.startswith("TYPE"):
+                    parts = line.split(":", 1)[1].strip().split(None, 1)
+                    svc["type"] = parts[1].lower() if len(parts) > 1 else (parts[0].lower() if parts else "win32")
+                elif line.startswith("STATE"):
+                    parts = line.split(":", 1)[1].strip().split()
+                    svc["state"] = parts[1] if len(parts) > 1 else (parts[0] if parts else "?")
+                elif line.startswith("PID"):
+                    svc["pid"] = line.split(":", 1)[1].strip()
+            count += add_service(svc)
             info(f"{count} services listés.")
+        except FileNotFoundError: error("sc.exe non disponible.")
+        except subprocess.TimeoutExpired: error("Timeout.")
         except Exception as e: error(f"Erreur : {e}")
     else:
         try:
-            result = subprocess.run(["systemctl", "list-units", "--type=service", "--all", "--no-pager", "--plain", "--no-legend"], capture_output=True, text=True, timeout=10)
+            code, stdout, stderr = _run_capture_text(["systemctl", "list-units", "--type=service", "--all", "--no-pager", "--plain", "--no-legend"], timeout=10)
             count = 0
-            for line in result.stdout.splitlines():
+            for line in stdout.splitlines():
                 parts = line.split()
                 if len(parts) < 4: continue
                 name, load, active, sub = parts[0], parts[1], parts[2], parts[3]
@@ -1815,8 +1978,8 @@ def services_manager():
                 status_str = f"[green]▶ active[/green]" if active == "active" else f"[red]✘ failed[/red]" if active == "failed" else f"[dim]■ inactive[/dim]" if active == "inactive" else f"[yellow]{active}[/yellow]"
                 pid_str = "—"
                 try:
-                    pid_res = subprocess.run(["systemctl", "show", name, "--property=MainPID"], capture_output=True, text=True, timeout=2)
-                    for l2 in pid_res.stdout.splitlines():
+                    _, pid_stdout, _ = _run_capture_text(["systemctl", "show", name, "--property=MainPID"], timeout=2)
+                    for l2 in pid_stdout.splitlines():
                         if l2.startswith("MainPID="):
                             pid_val = l2.split("=")[1].strip()
                             if pid_val and pid_val != "0": pid_str = pid_val
@@ -1832,10 +1995,18 @@ def services_manager():
     action_svc = console.input(f"[{col}]  Nom de service à inspecter [dim](vide = ignorer)[/dim] ❯ [/{col}]").strip()
     if action_svc:
         try:
-            res = subprocess.run(["systemctl", "status", action_svc, "--no-pager"], capture_output=True, text=True, timeout=5)
             console.print(Rule(f"[{col}]status : {action_svc}[/{col}]", style=f"dim {col}"))
-            console.print(res.stdout or res.stderr)
-        except Exception: pass
+            if system == "windows":
+                _, query_out, query_err = _run_capture_text(["sc.exe", "queryex", action_svc], timeout=5)
+                _, config_out, config_err = _run_capture_text(["sc.exe", "qc", action_svc], timeout=5)
+                console.print((query_out or query_err or "").strip())
+                console.print((config_out or config_err or "").strip())
+            else:
+                _, stdout, stderr = _run_capture_text(["systemctl", "status", action_svc, "--no-pager"], timeout=5)
+                console.print(stdout or stderr)
+        except FileNotFoundError: error("Commande systeme non disponible.")
+        except subprocess.TimeoutExpired: error("Timeout.")
+        except Exception as e: error(f"Erreur : {e}")
 
 def env_inspector():
     col = th()["primary"]

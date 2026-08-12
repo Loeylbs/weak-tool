@@ -8,7 +8,7 @@
   ██║     ██║  ██║██║██║ ╚═╝ ██║███████╗
   ╚═╝     ╚═╝  ╚═╝╚═╝╚═╝     ╚═╝╚══════╝
 
-  Multi-Tool Terminal v4.2.0 — UPGRADED (nom personnalisable, voir menu)
+  Multi-Tool Terminal v1.3.0 — UPGRADED (nom personnalisable, voir menu)
 """
 
 import os
@@ -35,6 +35,9 @@ from datetime import datetime, timedelta
 from urllib.error import URLError, HTTPError
 from collections import deque
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 # ── AUTO-INSTALL ──────────────────────────────────────────
 def _ensure(*pkgs):
     for p in pkgs:
@@ -47,12 +50,13 @@ def _ensure(*pkgs):
 
 _ensure("rich", "psutil", "pyfiglet", "qrcode")
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel   import Panel
 from rich.table   import Table
 from rich.text    import Text
 from rich.rule    import Rule
 from rich.align   import Align
+from rich.live    import Live
 from rich         import box
 import psutil
 import pyfiglet
@@ -61,10 +65,16 @@ import qrcode
 console = Console()
 
 # ── CONFIG ───────────────────────────────────────────────
-TOOL_NAME    = "weakdye"
-VERSION      = "v4.2.0"
+TOOL_NAME    = "weak-tool"
+VERSION      = "v1.3.0"
 LANG         = "fr"
 CMD_HISTORY  = deque(maxlen=20)
+MENU_ANIM_DELAY = 0.08
+MENU_ANIM_COLORS = [
+    "bright_magenta", "magenta", "bright_cyan", "cyan",
+    "bright_yellow", "yellow", "bright_green", "green",
+    "bright_blue", "blue", "bright_red", "red",
+]
 
 # ── AUTO-UPDATE (GitHub Releases) ─────────────────────────
 GITHUB_REPO          = "Loeylbs/weak-tool"  
@@ -79,6 +89,15 @@ NAME_CONFIG_PATH     = os.path.join(
 
 # ── THÈMES ───────────────────────────────────────────────
 THEMES = {
+    "neon": {
+        "name": "Neon Board", "primary": "bright_cyan", "secondary": "bright_magenta",
+        "accent": "bright_yellow", "danger": "bright_red", "success": "bright_green",
+        "warning": "bright_yellow", "dim_col": "bright_black", "border": "bright_cyan",
+        "cat_sys": "bright_yellow", "cat_net": "bright_green", "cat_mon": "bright_cyan",
+        "cat_uti": "bright_magenta", "cat_adv": "bright_red",
+        "dots": ". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .",
+        "box": box.ASCII,
+    },
     "graffiti": {
         "name": "Graffiti (Spray)", "primary": "bright_magenta", "secondary": "bright_cyan",
         "accent": "bright_yellow", "danger": "bright_red", "success": "bright_green",
@@ -115,9 +134,27 @@ THEMES = {
         "dots": "▓ ░ ▓ ▓ ░ ▒ ▓ ░ ▒ ▓ ▓ ░ ▓ ▒ ░ ▓ ▓ ░ ▒ ▓ ░ ▒ ▓ ▓ ░ ▓ ▒ ░ ▓ ▓ ░ ▒",
         "box": box.HEAVY,
     },
+    "dracula": {
+        "name": "Dracula", "primary": "bright_magenta", "secondary": "purple4",
+        "accent": "bright_cyan", "danger": "red", "success": "bright_green",
+        "warning": "yellow", "dim_col": "grey62", "border": "purple4",
+        "cat_sys": "bright_yellow", "cat_net": "bright_green", "cat_mon": "bright_cyan",
+        "cat_uti": "bright_magenta", "cat_adv": "red",
+        "dots": "◈ ◇ ◈ ◇ ◈ ◇ ◈ ◇ ◈ ◇ ◈ ◇ ◈ ◇ ◈ ◇ ◈ ◇ ◈ ◇ ◈ ◇ ◈ ◇ ◈ ◇ ◈ ◇ ◈ ◇ ◈ ◇ ◈ ◇",
+        "box": box.DOUBLE,
+    },
+    "blue-magic": {
+        "name": "Blue_marine", "primary": "bright_cyan", "secondary": "blue",
+        "accent": "bright_magenta", "danger": "red", "success": "bright_green",
+        "warning": "yellow", "dim_col": "bright_black", "border": "cyan",
+        "cat_sys": "bright_magenta", "cat_net": "green", "cat_mon": "cyan",
+        "cat_uti": "blue", "cat_adv": "bright_red",
+        "dots": "·  · · ·  · ·  · · ·  ·  · · ·  · ·  · · ·  ·  · · ·  · ·  · · ·  ·",
+        "box": box.SQUARE,
+    },
 }
 THEME_NAMES = list(THEMES.keys())
-CURRENT_THEME_IDX = 0
+CURRENT_THEME_IDX = THEME_NAMES.index("blue-magic")
 
 def th():
     return THEMES[THEME_NAMES[CURRENT_THEME_IDX]]
@@ -126,48 +163,56 @@ def th():
 def t(key: str) -> str:
     TEXTS = {
         "fr": {
-            "c_sys": "SYSTÈME", "c_net": "RÉSEAU", "c_mon": "MONITORING",
-            "c_uti": "UTILITAIRES", "c_adv": "AVANCÉ", "c_new": "NOUVEAU v4.2",
-            "sys1": "Info Système", "sys2": "Statut CPU", "sys3": "Info RAM",
-            "sys4": "Info Disque", "sys5": "Uptime / Boot", "sys6": "Exporter Rapport",
-            "net1": "Info Réseau", "net2": "Test Ping", "net3": "Stats Réseau",
-            "net4": "Lookup DNS", "net5": "Check Ports", "net6": "Scan LAN",
-            "mon1": "Moniteur Live", "mon2": "Top Processus",
-            "uti1": "Hash Generator", "uti2": "Générateur Mdp", "uti3": "Testeur Mdp",
-            "uti4": "Outil Base64", "uti5": "Nettoyer Temp",
-            "adv1": "Traceroute", "adv2": "Whois / GeoIP", "adv3": "QR Code ASCII",
-            "adv4": "Convertisseur", "adv5": "Proc. Suspects", "adv6": "Speedtest",
-            "new1": "Firewall Rules",   "new2": "SSH Audit",
-            "new3": "Watcher Logs",     "new4": "Services Manager",
-            "new5": "Env Inspector",    "new6": "ARP Table",
-            "new7": "Net Connections",  "new8": "File Hasher",
-            "new9": "Cron Inspector",   "new10": "Subnet Calc",
-            "new11": "MAC Lookup",      "new12": "Personnaliser Pseudo",
-            "theme": "Changer Thème", "hist": "Historique", "lang": "Langue (FR/EN)",
-            "quit": "[ QUITTER ]", "prompt": "  ❯ ", "bye": "À plus !",
-            "err": "Choix invalide.", "pause": "  ↵ Entrée pour continuer..."
-        },
-        "en": {
-            "c_sys": "SYSTEM", "c_net": "NETWORK", "c_mon": "MONITORING",
-            "c_uti": "UTILITIES", "c_adv": "ADVANCED", "c_new": "NEW v4.2",
-            "sys1": "System Info", "sys2": "CPU Status", "sys3": "RAM Info",
-            "sys4": "Disk Info", "sys5": "Uptime / Boot", "sys6": "Export Report",
-            "net1": "Network Info", "net2": "Ping Test", "net3": "Net Stats",
-            "net4": "DNS Lookup", "net5": "Port Checker", "net6": "LAN Scanner",
-            "mon1": "Live Monitor", "mon2": "Top Processes",
-            "uti1": "Hash Generator", "uti2": "Password Gen", "uti3": "Pass Checker",
-            "uti4": "Base64 Tool", "uti5": "Clean Temp",
-            "adv1": "Traceroute", "adv2": "Whois / GeoIP", "adv3": "ASCII QR Code",
-            "adv4": "Converter", "adv5": "Susp. Procs", "adv6": "Speedtest",
-            "new1": "Firewall Rules",   "new2": "SSH Audit",
-            "new3": "Log Watcher",      "new4": "Services Manager",
-            "new5": "Env Inspector",    "new6": "ARP Table",
-            "new7": "Net Connections",  "new8": "File Hasher",
-            "new9": "Cron Inspector",   "new10": "Subnet Calc",
-            "new11": "MAC Lookup",      "new12": "Rename Tool",
-            "theme": "Change Theme", "hist": "History", "lang": "Language (EN/FR)",
-            "quit": "[ QUIT ]", "prompt": "  ❯ ", "bye": "See ya!",
-            "err": "Invalid choice.", "pause": "  ↵ Press Enter to continue..."
+        "c_sys": "SYSTÈME", "c_net": "RÉSEAU", "c_mon": "MONITORING",
+        "c_uti": "UTILITAIRES", "c_adv": "AVANCÉ",
+        "sys1": "Info Système", "sys2": "Statut CPU", "sys3": "Info RAM",
+        "sys4": "Info Disque", "sys5": "Uptime / Boot", "sys6": "Exporter Rapport",
+        "net1": "Info Réseau", "net2": "Test Ping", "net3": "Stats Réseau",
+        "net4": "Lookup DNS", "net5": "Check Ports", "net6": "Scan LAN",
+        "mon1": "Moniteur Live", "mon2": "Top Processus",
+        "uti1": "Générateur de Hash", "uti2": "Générateur Mdp", "uti3": "Testeur Mdp",
+        "uti4": "Outil Base64", "uti5": "Nettoyer Temp",
+        "adv1": "Traceroute", "adv2": "Whois / GeoIP", "adv3": "QR Code ASCII",
+        "adv4": "Convertisseur", "adv5": "Proc. Suspects", "adv6": "Speedtest",
+        "new1": "Règles Pare-feu", "new2": "Audit SSH",
+        "new3": "Observateur de Logs", "new4": "Gestionnaire Services",
+        "new5": "Inspecteur d'Env", "new6": "Table ARP",
+        "new7": "Connexions Réseau", "new8": "Hash de Fichier",
+        "new9": "Inspecteur Cron", "new10": "Calcul de Sous-réseau",
+        "new11": "Recherche MAC", "new12": "Personnaliser Pseudo",
+        "new13": "Diskpart Simplifié",
+        "new14": "Outils Texte", "new15": "Date & Heure",
+        "new16": "Outils Couleur", "new17": "Encodeurs",
+        "new18": "Générateur Aléatoire", "new19": "Comparateur",
+        "theme": "Changer Thème", "hist": "Historique", "lang": "Langue (FR/EN)",
+        "quit": "[ QUITTER ]", "prompt": "  ❯ ", "bye": "À plus !",
+        "err": "Choix invalide.", "pause": "  ↵ Entrée pour continuer..."
+    },
+    "en": {
+        "c_sys": "SYSTEM", "c_net": "NETWORK", "c_mon": "MONITORING",
+        "c_uti": "UTILITIES", "c_adv": "ADVANCED",
+        "sys1": "System Info", "sys2": "CPU Status", "sys3": "RAM Info",
+        "sys4": "Disk Info", "sys5": "Uptime / Boot", "sys6": "Export Report",
+        "net1": "Network Info", "net2": "Ping Test", "net3": "Net Stats",
+        "net4": "DNS Lookup", "net5": "Port Checker", "net6": "LAN Scanner",
+        "mon1": "Live Monitor", "mon2": "Top Processes",
+        "uti1": "Hash Generator", "uti2": "Password Gen", "uti3": "Pass Checker",
+        "uti4": "Base64 Tool", "uti5": "Clean Temp",
+        "adv1": "Traceroute", "adv2": "Whois / GeoIP", "adv3": "ASCII QR Code",
+        "adv4": "Converter", "adv5": "Susp. Procs", "adv6": "Speedtest",
+        "new1": "Firewall Rules", "new2": "SSH Audit",
+        "new3": "Log Watcher", "new4": "Services Manager",
+        "new5": "Env Inspector", "new6": "ARP Table",
+        "new7": "Net Connections", "new8": "File Hasher",
+        "new9": "Cron Inspector", "new10": "Subnet Calc",
+        "new11": "MAC Lookup", "new12": "Rename Tool",
+        "new13": "Simple Diskpart",
+        "new14": "Text Tools", "new15": "Date & Time",
+        "new16": "Color Tools", "new17": "Encoders",
+        "new18": "Random Generator", "new19": "Diff Checker",
+        "theme": "Change Theme", "hist": "History", "lang": "Language (EN/FR)",
+        "quit": "[ QUIT ]", "prompt": "  ❯ ", "bye": "See ya!",
+        "err": "Invalid choice.", "pause": "  ↵ Press Enter to continue..."
         }
     }
     return TEXTS[LANG].get(key, key)
@@ -200,6 +245,7 @@ def is_admin():
 def themed_table(*args, **kwargs):
     kwargs.setdefault("box", th()["box"])
     kwargs.setdefault("border_style", th()["border"])
+    kwargs.setdefault("row_styles", ["", "dim"])
     return Table(*args, **kwargs)
 
 def success(msg):
@@ -231,7 +277,6 @@ def _save_update_config(data):
 
 # ── NOM PERSONNALISÉ (pseudo) ─────────────────────────────
 def _load_display_name():
-    """Charge le pseudo sauvegardé si présent, sinon retombe sur TOOL_NAME."""
     try:
         with open(NAME_CONFIG_PATH, "r", encoding="utf-8") as f:
             saved = (json.load(f).get("display_name") or "").strip()
@@ -250,7 +295,6 @@ def _save_display_name(name):
 DISPLAY_NAME = _load_display_name()
 
 def _parse_version(v):
-    """'v4.10.2' -> (4, 10, 2). Ignore le prefixe 'v' et les suffixes non numeriques."""
     v = v.lstrip("vV")
     parts = []
     for chunk in v.split("."):
@@ -269,13 +313,18 @@ def _is_newer(remote, local):
     try:
         return _parse_version(remote) > _parse_version(local)
     except Exception:
-        return remote != local
+        return False
+
+def _is_developer_version(local, remote):
+    try:
+        return _parse_version(local) > _parse_version(remote)
+    except Exception:
+        return False
 
 def _fetch_latest_release():
-    """Interroge l'API GitHub. Renvoie le JSON de la release, ou None si pas de reseau/erreur."""
-    if GITHUB_REPO == "TON_USER/TON_REPO":
-        return None  # depot pas encore configure
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+    if GITHUB_REPO == "Loeylbs/weak-tool":
+        return None
+    url = f"https://api.github.com/repos/Loeylbs/weak-tool/releases/latest"
     req = urllib.request.Request(url, headers={
         "Accept": "application/vnd.github+json",
         "User-Agent": f"{TOOL_NAME}-updater",
@@ -287,7 +336,6 @@ def _fetch_latest_release():
         return None
 
 def _pick_asset(release):
-    """Choisit l'asset a telecharger : meme nom que le script actuel, sinon 1er .py trouve."""
     own_name = os.path.basename(os.path.abspath(__file__))
     assets = release.get("assets") or []
     for a in assets:
@@ -348,9 +396,6 @@ def _relaunch():
     sys.exit(0)
 
 def _spawn_relay_updater(new_path, target_path):
-    """Filet de securite si le remplacement direct echoue (fichier verrouille, rare).
-    Cree un mini-script jetable dans un dossier temporaire qui attend, remplace,
-    relance, puis se supprime lui-meme."""
     relay_code = (
         "import os, sys, time, subprocess\n"
         f"new_path = {new_path!r}\n"
@@ -416,7 +461,6 @@ def _apply_update(asset):
         return False
 
 def check_for_updates():
-    """A appeler une fois au lancement. Ne bloque jamais si pas de reseau / API indisponible."""
     cfg = _load_update_config()
 
     next_reminder = cfg.get("next_reminder")
@@ -432,6 +476,11 @@ def check_for_updates():
         return
 
     remote_v = release["tag_name"]
+
+    if _is_developer_version(VERSION, remote_v):
+        info(f"Version developpeur detectee ({VERSION} > {remote_v}) : mise a jour ignoree.")
+        time.sleep(1.0)
+        return
 
     if remote_v == cfg.get("ignored_version"):
         return
@@ -465,7 +514,9 @@ def _gradient_banner(ascii_logo: str):
     theme_key = THEME_NAMES[CURRENT_THEME_IDX]
     lines = ascii_logo.rstrip().splitlines()
 
-    if theme_key == "cyber":
+    if theme_key == "neon":
+        gradient = ["bright_yellow", "bright_cyan", "bright_magenta", "bright_cyan", "bright_yellow"]
+    elif theme_key == "cyber":
         gradient = ["bright_cyan","cyan","blue","bright_blue","cyan","bright_cyan"]
     elif theme_key == "matrix":
         gradient = ["bright_green","green","bright_green","green","bright_green","green"]
@@ -473,47 +524,94 @@ def _gradient_banner(ascii_logo: str):
         gradient = ["bright_red","red","bright_red","red","bright_red","bright_red"]
     elif theme_key == "graffiti":
         gradient = ["bright_magenta","bright_cyan","bright_yellow","bright_cyan","bright_magenta"]
+    elif theme_key == "dracula":
+        gradient = ["bright_magenta","purple4","bright_cyan","purple4","bright_magenta","purple4"]
+    elif theme_key == "blue_marine":
+        gradient = ["bright_cyan","cyan","blue","bright_blue","cyan","bright_cyan"]
     else:
         gradient = ["white","bright_white","white","bright_white","white","white"]
 
     for i, line in enumerate(lines):
         color = gradient[i % len(gradient)]
-        console.print(Align.center(f"[bold {color}]{line}[/bold {color}]"))
+        console.print(Align.center(Text(line, style=f"bold {color}")))
+
+def _screen_width():
+    return max(84, min(console.width, 170))
+
+def _neon_line(width=None):
+    width = width or _screen_width()
+    left = max(8, width // 5)
+    center = max(12, width // 6)
+    right = max(8, width - left - center - 10)
+    text = Text()
+    text.append(" " * 3)
+    text.append(".".join([""] * left), style=th()["primary"])
+    text.append("++", style=th()["secondary"])
+    text.append(".".join([""] * center), style=th()["primary"])
+    text.append("++", style=th()["secondary"])
+    text.append(".".join([""] * right), style=th()["primary"])
+    return text
+
+def _starfield(width, rows=2):
+    rng = random.Random(1337)
+    chars = (".", "·", "*")
+    dim, sec = th()["dim_col"], th()["secondary"]
+    for _ in range(rows):
+        line = Text()
+        for _c in range(width):
+            if rng.random() < 0.035:
+                ch = rng.choice(chars)
+                style = f"bold {sec}" if rng.random() < 0.3 else dim
+                line.append(ch, style=style)
+            else:
+                line.append(" ")
+        console.print(Align.center(line))
+
+def _pixel_fade(width, rows=2, base_density=0.14):
+    rng = random.Random(2026)
+    pri, dim = th()["primary"], th()["dim_col"]
+    for i in range(rows):
+        density = base_density * (1 - i / max(1, rows))
+        line = Text()
+        for _c in range(width):
+            if rng.random() < density:
+                ch = rng.choice(("░", "▒", "·", "."))
+                style = pri if rng.random() < 0.3 else dim
+                line.append(ch, style=style)
+            else:
+                line.append(" ")
+        console.print(Align.center(line))
+
+def _anim_color():
+    return th()["primary"]
 
 def banner():
     clr()
-    dots = th()["dots"]
-    dim  = th()["dim_col"]
-    console.print(f"[{dim}]{dots}[/{dim}]")
-    console.print(f"[{dim}]{dots}[/{dim}]")
-    console.print()
+    width = _screen_width()
+    sec, dim = th()["secondary"], th()["dim_col"]
+    privilege = "ADMIN" if is_admin() else "USER"
+    meta = f"{VERSION} · {privilege} · {getpass.getuser()}@{platform.node()} · {datetime.now().strftime('%H:%M:%S')}"
 
-    term_width = shutil.get_terminal_size().columns
+    console.print()
+    _starfield(width)
+
     ascii_logo = None
-    for font in ("graffiti", "slant", "standard", "small", "mini"):
+    for font in ("ansi_shadow", "big", "standard", "slant", "small", "mini"):
         try:
-            candidate = pyfiglet.figlet_format(DISPLAY_NAME, font=font, width=term_width)
+            candidate = pyfiglet.figlet_format(DISPLAY_NAME, font=font, width=width)
         except Exception:
             continue
-        candidate_lines = candidate.rstrip().splitlines()
-        max_w = max((len(l) for l in candidate_lines), default=0)
-        if max_w <= term_width:
+        lines = candidate.rstrip().splitlines()
+        if max((len(line) for line in lines), default=0) <= width:
             ascii_logo = candidate
             break
     if ascii_logo is None:
-        ascii_logo = f"  {DISPLAY_NAME}  "
+        ascii_logo = f"/ {DISPLAY_NAME.upper()} \\"
 
     _gradient_banner(ascii_logo)
-
-    console.print()
-    privilege = f"[bold {th()['danger']}]ROOT/ADMIN[/bold {th()['danger']}]" if is_admin() \
-                else f"[{th()['secondary']}]USER[/{th()['secondary']}]"
-    theme_badge = f"[{dim}]theme:[/{dim}][{th()['primary']}]{th()['name']}[/{th()['primary']}]"
-    console.print(Align.center(
-        f"[{dim}]  {VERSION}  ·  [/{dim}]{privilege}"
-        f"[{dim}]  ·  {getpass.getuser()}@{platform.node()}"
-        f"  ·  {datetime.now().strftime('%H:%M:%S')}  ·  [/{dim}]{theme_badge}"
-    ))
+    _pixel_fade(width)
+    console.print(Align.center(Text(meta, style=dim)))
+    console.print(Align.center(Text(f"theme:{th()['name']}", style=sec)))
     console.print()
 
 # ── CATÉGORIES DU MENU ────────────────────────────────────
@@ -522,72 +620,225 @@ def get_cats():
         (t("c_sys"), th()["cat_sys"], [
             ("01", t("sys1")), ("02", t("sys2")), ("03", t("sys3")),
             ("04", t("sys4")), ("05", t("sys5")), ("06", t("sys6")),
+            ("32", t("new4")), ("33", t("new5")), ("37", t("new9")),
+            ("41", t("new13")),
         ]),
         (t("c_net"), th()["cat_net"], [
             ("07", t("net1")), ("08", t("net2")), ("09", t("net3")),
             ("10", t("net4")), ("11", t("net5")), ("12", t("net6")),
+            ("29", t("new1")), ("30", t("new2")), ("34", t("new6")),
+            ("35", t("new7")), ("38", t("new10")), ("39", t("new11")),
         ]),
         (t("c_mon"), th()["cat_mon"], [
-            ("13", t("mon1")), ("14", t("mon2")),
+            ("13", t("mon1")), ("14", t("mon2")), ("31", t("new3")),
         ]),
         (t("c_uti"), th()["cat_uti"], [
             ("15", t("uti1")), ("16", t("uti2")), ("17", t("uti3")),
-            ("18", t("uti4")), ("19", t("uti5")),
+            ("18", t("uti4")), ("19", t("uti5")), ("36", t("new8")),
+            ("42", t("new14")), ("43", t("new15")), ("44", t("new16")),
+            ("45", t("new17")), ("46", t("new18")),
         ]),
         (t("c_adv"), th()["cat_adv"], [
             ("21", t("adv1")), ("22", t("adv2")), ("23", t("adv3")),
             ("24", t("adv4")), ("25", t("adv5")), ("26", t("adv6")),
             ("27", t("theme")), ("28", t("hist")), ("20", t("lang")), ("00", t("quit")),
-        ]),
-        # ── NOUVELLE CATÉGORIE v4.2 ──
-        (t("c_new"), th()["primary"], [
-            ("29", t("new1")), ("30", t("new2")), ("31", t("new3")),
-            ("32", t("new4")), ("33", t("new5")), ("34", t("new6")),
-            ("35", t("new7")), ("36", t("new8")), ("37", t("new9")),
-            ("38", t("new10")), ("39", t("new11")), ("40", t("new12")),
+            ("40", t("new12")), ("47", t("new19")),
         ]),
     ]
 
-def _make_panel(title: str, color: str, items: list) -> Panel:
+def _make_panel(title: str, color: str, items: list, width: int = 32, border_color: str = None) -> Panel:
+    border_color = border_color or color
     t_obj = Text()
+    max_label = max(10, width - 10)
     for num, label in items:
-        t_obj.append(f"[{num}] ", style=f"bold {color}")
-        t_obj.append(f"{label}\n", style="white")
+        clipped = label if len(label) <= max_label else label[:max_label - 3] + "..."
+        t_obj.append(f"[{num}] ", style=f"bold {border_color}")
+        t_obj.append(f"{clipped}\n", style=color)
     t_obj.rstrip()
     return Panel(
-        t_obj, title=f"[{color}]/ {title} \\[/]", border_style=color,
-        box=th()["box"], expand=False, width=34
+        t_obj,
+        title=Text(f"/ {title} \\", style=f"bold {border_color}"),
+        title_align="center",
+        border_style=border_color,
+        box=th()["box"],
+        expand=False,
+        width=width,
+        padding=(0, 1),
     )
 
-def draw_menu() -> str:
+# ── BORDURE TOURNANTE (spinner de chargement) ─────────────
+def _spin_panel_render(title: str, color: str, items: list, width: int,
+                        border_color: str, phase: int, tail: int = 5) -> Text:
+    panel = _make_panel(title, color, items, width=width, border_color=border_color)
+    opts = console.options.update(width=width)
+    lines = console.render_lines(panel, opts, pad=False)
+    h = len(lines)
+    w = sum(len(seg.text) for seg in lines[0]) if lines else width
+
+    top_len, right_len, bottom_len, left_len = w, max(0, h - 2), w, max(0, h - 2)
+    perim_len = max(1, top_len + right_len + bottom_len + left_len)
+    lit = {(phase + k) % perim_len for k in range(tail)}
+
+    out = Text()
+    for r, segs in enumerate(lines):
+        col = 0
+        for seg in segs:
+            style_str = str(seg.style) if seg.style else ""
+            for ch in seg.text:
+                idx = None
+                if r == 0 and style_str == border_color:
+                    idx = col
+                elif r == h - 1 and style_str == border_color:
+                    idx = top_len + right_len + (w - 1 - col)
+                elif col == w - 1 and 0 < r < h - 1:
+                    idx = top_len + (r - 1)
+                elif col == 0 and 0 < r < h - 1:
+                    idx = top_len + right_len + bottom_len + (h - 2 - r)
+
+                if idx is not None:
+                    if idx in lit:
+                        out.append(ch, style=f"bold {border_color}")
+                    else:
+                        out.append(" ")
+                else:
+                    out.append(ch, style=seg.style)
+                col += 1
+        out.append("\n")
+    return out
+
+def _spin_menu_intro(cats, width, wide, panel_w):
+    borders = [th()["border"]] * len(cats)
+    dim = th()["dim_col"]
+
+    def frame(phase):
+        parts = [
+            Align.center(_spin_panel_render(*cats[0], panel_w, borders[0], phase)),
+            Align.center(_neon_line(width)),
+            Align.center(Text("· " * 24, style=dim)),
+        ]
+        if wide:
+            grid = Table.grid(padding=(0, 1))
+            grid.add_row(
+                _spin_panel_render(*cats[3], panel_w, borders[3], phase),
+                _spin_panel_render(*cats[2], panel_w, borders[2], phase),
+                _spin_panel_render(*cats[4], panel_w, borders[4], phase),
+                _spin_panel_render(*cats[1], panel_w, borders[1], phase),
+            )
+            parts.append(Align.center(grid))
+        else:
+            top = Table.grid(padding=(0, 1))
+            top.add_row(
+                _spin_panel_render(*cats[3], panel_w, borders[3], phase),
+                _spin_panel_render(*cats[4], panel_w, borders[4], phase),
+            )
+            middle = Table.grid(padding=(0, 1))
+            middle.add_row(
+                _spin_panel_render(*cats[2], panel_w, borders[2], phase),
+                _spin_panel_render(*cats[1], panel_w, borders[1], phase),
+            )
+            parts.append(Align.center(top))
+            parts.append(Align.center(Text("· " * 24, style=dim)))
+            parts.append(Align.center(middle))
+        parts.append(Align.center(Text("-" * min(width - 12, 112), style=dim)))
+        return Group(*parts)
+
+    try:
+        with Live(frame(0), console=console, refresh_per_second=20, transient=True) as live:
+            for i in range(16):
+                live.update(frame(i * 3))
+                time.sleep(0.045)
+    except Exception:
+        pass
+
+def _render_menu_frame(typed="", spin_intro=False):
+    banner()
     cats = get_cats()
-    pri, sec, dim, mag = th()["primary"], th()["secondary"], th()["dim_col"], th()["cat_uti"]
+    pri, dim = th()["primary"], th()["dim_col"]
+    width = _screen_width()
+    wide = width >= 145
+    panel_w = 31 if wide else 34
+    borders = [th()["border"]] * len(cats)
 
-    console.print(Align.center(_make_panel(*cats[0])))
-    conn_line = (f"[{sec}]· · · · · [/{sec}][{pri}]· · · · · · [/{pri}]"
-                 f"[{dim}]· · · · · · · · · [/{dim}][{pri}]· · · · · · [/{pri}][{mag}]· · · · · [/{mag}]")
-    console.print(Align.center(conn_line))
+    if spin_intro:
+        _spin_menu_intro(cats, width, wide, panel_w)
 
-    grid_mid = Table.grid(padding=(0, 2))
-    grid_mid.add_row(*[_make_panel(*c) for c in cats[1:4]])
-    console.print(Align.center(grid_mid))
+    console.print(Align.center(_make_panel(*cats[0], width=panel_w, border_color=borders[0])))
+    console.print(Align.center(_neon_line(width)))
 
-    console.print(Align.center(f"[{dim}]{'· ' * 20}[/{dim}]"))
-    console.print(Align.center(_make_panel(*cats[4])))
+    console.print(Align.center(Text("· " * 24, style=dim)))
 
-    # Panneau des nouvelles features
-    console.print(Align.center(f"[{pri}]{'★ ' * 20}[/{pri}]"))
-    console.print(Align.center(_make_panel(*cats[5])))
+    if wide:
+        grid = Table.grid(padding=(0, 1))
+        grid.add_row(
+            _make_panel(*cats[3], width=panel_w, border_color=borders[3]),
+            _make_panel(*cats[2], width=panel_w, border_color=borders[2]),
+            _make_panel(*cats[4], width=panel_w, border_color=borders[4]),
+            _make_panel(*cats[1], width=panel_w, border_color=borders[1]),
+        )
+        console.print(Align.center(grid))
+    else:
+        top = Table.grid(padding=(0, 1))
+        top.add_row(
+            _make_panel(*cats[3], width=panel_w, border_color=borders[3]),
+            _make_panel(*cats[4], width=panel_w, border_color=borders[4]),
+        )
+        middle = Table.grid(padding=(0, 1))
+        middle.add_row(
+            _make_panel(*cats[2], width=panel_w, border_color=borders[2]),
+            _make_panel(*cats[1], width=panel_w, border_color=borders[1]),
+        )
+        console.print(Align.center(top))
+        console.print(Align.center(Text("· " * 24, style=dim)))
+        console.print(Align.center(middle))
+
+    console.print(Align.center(Text("-" * min(width - 12, 112), style=dim)))
     console.print()
+    console.print(Align.center(Text(f"{t('prompt')}{typed}", style=f"bold {pri}")))
 
-    raw = console.input(f"[bold {pri}]{t('prompt')}[/bold {pri}]").strip()
-    if raw: CMD_HISTORY.append(raw)
-    return raw
+def _animated_menu_input():
+    if os.name != "nt" or not sys.stdin.isatty():
+        _render_menu_frame("", spin_intro=True)
+        raw = console.input(f"[bold {th()['primary']}]{t('prompt')}[/bold {th()['primary']}]").strip()
+        if raw:
+            CMD_HISTORY.append(raw)
+        return raw
+
+    import msvcrt
+    typed = ""
+    _render_menu_frame(typed, spin_intro=True)
+    while True:
+        if msvcrt.kbhit():
+            ch = msvcrt.getwch()
+            if ch in ("\r", "\n"):
+                raw = typed.strip()
+                if raw:
+                    CMD_HISTORY.append(raw)
+                return raw
+            if ch == "\x03":
+                raise KeyboardInterrupt
+            if ch == "\x08":
+                typed = typed[:-1]
+            elif ch in ("\x00", "\xe0"):
+                if msvcrt.kbhit():
+                    msvcrt.getwch()
+            elif ch.isprintable():
+                typed += ch
+            _render_menu_frame(typed)
+        time.sleep(0.01)
+
+def draw_menu() -> str:
+    return _animated_menu_input()
 
 def section(label: str, color: str):
     clr()
     banner()
-    console.print(Rule(f"[bold {color}]◈  {label.upper()}  ◈[/bold {color}]", style=f"dim {color}"))
+    console.print(Align.center(Panel(
+        Text(f">>> {label.upper()}", style=f"bold {color}"),
+        border_style=color,
+        box=th()["box"],
+        expand=False,
+        padding=(0, 4),
+    )))
     console.print()
 
 def _color_for(choice: str) -> tuple:
@@ -906,8 +1157,8 @@ def live_monitor():
     console.print(f"[dim {col}]  Ctrl+C pour arrêter[/dim {col}]\n")
     net_prev = psutil.net_io_counters()
     prev_time = time.time()
-    # Amorçage du cpu_percent() par process (même raison que top_processes())
-    # pour éviter une première image sans aucun process affiché.
+    cpu_hist = deque(maxlen=20)
+    ram_hist = deque(maxlen=20)
     for p in psutil.process_iter():
         try: p.cpu_percent(None)
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess): pass
@@ -923,6 +1174,8 @@ def live_monitor():
             ul_rate = (net_cur.bytes_sent - net_prev.bytes_sent) / delta / 1024
             dl_rate = (net_cur.bytes_recv - net_prev.bytes_recv) / delta / 1024
             net_prev, prev_time = net_cur, now
+            cpu_hist.append(cpu)
+            ram_hist.append(ram)
 
             t_ui = themed_table(title=f"[dim]🟢 Live — {datetime.now().strftime('%H:%M:%S')}[/dim]", border_style=col)
             t_ui.add_column("Métrique",  style=col, width=14)
@@ -931,8 +1184,21 @@ def live_monitor():
 
             col_c = "green" if cpu < 60 else "yellow" if cpu < 85 else "red"
             col_r = "green" if ram < 60 else "yellow" if ram < 85 else "red"
+
+            def sparkline(hist, width=16):
+                if not hist: return " " * width
+                chars = []
+                for v in hist:
+                    if v < 25: chars.append("▁")
+                    elif v < 50: chars.append("▃")
+                    elif v < 75: chars.append("▅")
+                    else: chars.append("▇")
+                return "".join(chars[-width:]).rjust(width)
+
             t_ui.add_row("CPU",     pct_bar(cpu),  f"[bold {col_c}]{cpu:.1f}%[/bold {col_c}]")
+            t_ui.add_row("CPU Hist", sparkline(cpu_hist), "")
             t_ui.add_row("RAM",     pct_bar(ram),  f"[bold {col_r}]{ram:.1f}%[/bold {col_r}]")
+            t_ui.add_row("RAM Hist", sparkline(ram_hist), "")
             t_ui.add_row("Upload",  f"[blue]{'▸'*16}[/blue]",  f"[blue]{ul_rate:.1f} KB/s[/blue]")
             t_ui.add_row("Downld",  f"[green]{'▸'*16}[/green]",f"[green]{dl_rate:.1f} KB/s[/green]")
             if dk:
@@ -1759,8 +2025,6 @@ def mac_lookup():
         error(f"Erreur réseau : {e}")
 
 def rename_tool():
-    """Personnalise le pseudo affiché dans la bannière (remplace le nom par défaut).
-    Sauvegardé dans un petit fichier de config à côté du script, relu au prochain lancement."""
     global DISPLAY_NAME
     col = th()["primary"]
     console.print(f"[{col}]  Pseudo actuel : [bold white]{DISPLAY_NAME}[/bold white][/{col}]")
@@ -1785,6 +2049,573 @@ def rename_tool():
         warn(f"Pseudo changé en [bold]{cleaned}[/bold] pour cette session seulement (sauvegarde impossible).")
 
 # ═══════════════════════════════════════════════════════
+def _json_list(data):
+    if data is None:
+        return []
+    return data if isinstance(data, list) else [data]
+
+def _format_disk_size(value):
+    try:
+        size = float(value or 0)
+    except (TypeError, ValueError):
+        return "?"
+    for unit in ("B", "KB", "MB", "GB", "TB", "PB"):
+        if size < 1024 or unit == "PB":
+            return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return "?"
+
+def _run_powershell_json(script):
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        capture_output=True, text=True, errors="replace", timeout=25
+    )
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout or "PowerShell a echoue.").strip())
+    output = (result.stdout or "").strip()
+    if not output:
+        return []
+    return json.loads(output)
+
+def _normalize_disk_row(row):
+    def as_bool(value):
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() == "true"
+
+    try:
+        number = int(row.get("Number"))
+    except (TypeError, ValueError):
+        return None
+
+    letters = row.get("DriveLetters") or ""
+    if isinstance(letters, list):
+        letters = ", ".join(str(v) for v in letters if str(v).strip())
+    letters = str(letters).strip() or "-"
+
+    return {
+        "number": number,
+        "name": str(row.get("FriendlyName") or row.get("Model") or "Inconnu").strip(),
+        "size": int(row.get("Size") or 0),
+        "bus": str(row.get("BusType") or row.get("InterfaceType") or "?").strip(),
+        "media": str(row.get("MediaType") or "?").strip(),
+        "style": str(row.get("PartitionStyle") or "?").strip(),
+        "status": str(row.get("OperationalStatus") or row.get("Status") or "?").strip(),
+        "letters": letters,
+        "is_boot": as_bool(row.get("IsBoot")),
+        "is_system": as_bool(row.get("IsSystem")),
+        "is_offline": as_bool(row.get("IsOffline")),
+        "is_readonly": as_bool(row.get("IsReadOnly")),
+    }
+
+def _get_windows_disks():
+    get_disk_script = r"""
+$ErrorActionPreference = 'Stop'
+$partitionGroups = @(Get-Partition | Where-Object { $_.DriveLetter } | Group-Object DiskNumber)
+$rows = @()
+foreach ($disk in Get-Disk | Sort-Object Number) {
+    $letters = @()
+    foreach ($group in $partitionGroups) {
+        if ([int]$group.Name -eq [int]$disk.Number) {
+            foreach ($part in $group.Group) {
+                if ($part.DriveLetter) { $letters += "$($part.DriveLetter):" }
+            }
+        }
+    }
+    $rows += [PSCustomObject]@{
+        Number = [int]$disk.Number
+        FriendlyName = [string]$disk.FriendlyName
+        Size = [Int64]$disk.Size
+        BusType = [string]$disk.BusType
+        MediaType = [string]$disk.MediaType
+        PartitionStyle = [string]$disk.PartitionStyle
+        OperationalStatus = (($disk.OperationalStatus | ForEach-Object { [string]$_ }) -join ', ')
+        IsBoot = [bool]$disk.IsBoot
+        IsSystem = [bool]$disk.IsSystem
+        IsOffline = [bool]$disk.IsOffline
+        IsReadOnly = [bool]$disk.IsReadOnly
+        DriveLetters = ($letters -join ', ')
+    }
+}
+$rows | ConvertTo-Json -Depth 4
+""".strip()
+
+    cim_fallback_script = r"""
+$ErrorActionPreference = 'Stop'
+$rows = @()
+foreach ($disk in Get-CimInstance Win32_DiskDrive | Sort-Object Index) {
+    $letters = @()
+    foreach ($partition in Get-CimAssociatedInstance -InputObject $disk -Association Win32_DiskDriveToDiskPartition) {
+        foreach ($logical in Get-CimAssociatedInstance -InputObject $partition -Association Win32_LogicalDiskToPartition) {
+            if ($logical.DeviceID) { $letters += [string]$logical.DeviceID }
+        }
+    }
+    $rows += [PSCustomObject]@{
+        Number = [int]$disk.Index
+        FriendlyName = [string]$disk.Model
+        Size = [Int64]$disk.Size
+        BusType = [string]$disk.InterfaceType
+        MediaType = [string]$disk.MediaType
+        PartitionStyle = '?'
+        OperationalStatus = [string]$disk.Status
+        IsBoot = $false
+        IsSystem = $false
+        IsOffline = $false
+        IsReadOnly = $false
+        DriveLetters = ($letters -join ', ')
+    }
+}
+$rows | ConvertTo-Json -Depth 4
+""".strip()
+
+    errors = []
+    for script in (get_disk_script, cim_fallback_script):
+        try:
+            disks = []
+            for row in _json_list(_run_powershell_json(script)):
+                disk = _normalize_disk_row(row)
+                if disk:
+                    disks.append(disk)
+            if disks:
+                return disks
+        except Exception as exc:
+            errors.append(str(exc))
+    raise RuntimeError("Impossible de lister les disques : " + " | ".join(errors))
+
+def _show_disk_table(disks, color):
+    table = themed_table(border_style=color)
+    table.add_column("Disque", style=f"bold {color}", width=10)
+    table.add_column("Nom / Modèle", style="white", width=30)
+    table.add_column("Taille", style="white", width=12)
+    table.add_column("Lettre(s)", style="bold white", width=12)
+    table.add_column("Type", style="dim", width=12)
+    table.add_column("Etat", style="dim", width=16)
+    table.add_column("Alertes", width=18)
+
+    for disk in disks:
+        alerts = []
+        if disk["is_boot"]:
+            alerts.append("[red]BOOT[/red]")
+        if disk["is_system"]:
+            alerts.append("[red]SYSTEME[/red]")
+        if disk["is_offline"]:
+            alerts.append("[yellow]OFFLINE[/yellow]")
+        if disk["is_readonly"]:
+            alerts.append("[yellow]READONLY[/yellow]")
+        table.add_row(
+            f"Disque {disk['number']}",
+            disk["name"][:30],
+            _format_disk_size(disk["size"]),
+            disk["letters"],
+            f"{disk['bus']} / {disk['media']}"[:12],
+            disk["status"][:16],
+            ", ".join(alerts) if alerts else "[green]OK[/green]",
+        )
+    console.print(table)
+
+def _diskpart_output_has_error(output):
+    lower = (output or "").lower()
+    markers = (
+        "error", "erreur", "failed", "echec", "échec", "invalid", "incorrect",
+        "access is denied", "acces refuse", "accès refusé", "virtual disk service error",
+        "service de disque virtuel", "no disk", "aucun disque"
+    )
+    return any(marker in lower for marker in markers)
+
+def _run_diskpart_script(commands, mode_label):
+    import threading
+    from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+
+    fd, script_path = tempfile.mkstemp(prefix="weak_tool_diskpart_", suffix=".txt")
+    output_chunks = []
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as script_file:
+            script_file.write("\n".join(commands) + "\n")
+
+        process = subprocess.Popen(
+            ["diskpart", "/s", script_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            errors="replace",
+        )
+
+        def collect_output():
+            if process.stdout:
+                for line in process.stdout:
+                    output_chunks.append(line)
+
+        reader = threading.Thread(target=collect_output, daemon=True)
+        reader.start()
+
+        with Progress(
+            SpinnerColumn(style=th()["primary"]),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=False,
+        ) as progress:
+            progress.add_task(f"Diskpart en cours - {mode_label}", total=None)
+            while process.poll() is None:
+                time.sleep(0.5)
+
+        reader.join(timeout=2)
+        return process.returncode, "".join(output_chunks)
+    finally:
+        try:
+            os.remove(script_path)
+        except OSError:
+            pass
+
+def diskpart_simplifie():
+    col = th()["primary"]
+    if platform.system().lower() != "windows":
+        error("Ce module utilise Diskpart et fonctionne uniquement sous Windows.")
+        return
+    if not is_admin():
+        error("Lancez ce multitool en administrateur avant d'utiliser Diskpart.")
+        return
+
+    warn("Module destructif : le disque choisi sera effacé entièrement.")
+    try:
+        disks = _get_windows_disks()
+    except Exception as exc:
+        error(str(exc))
+        return
+
+    if not disks:
+        error("Aucun périphérique de stockage détecté.")
+        return
+
+    _show_disk_table(disks, col)
+    disk_by_number = {str(disk["number"]): disk for disk in disks}
+    choice = console.input(f"\n[{col}]  Numéro du disque à effacer [dim](vide = annuler)[/dim] ❯ [/{col}]").strip()
+    if not choice:
+        info("Opération annulée.")
+        return
+    if choice not in disk_by_number:
+        error("Numéro de disque invalide.")
+        return
+
+    disk = disk_by_number[choice]
+    console.print()
+    console.print(f"[{col}]  [1][/{col}] Rapide  [dim]- diskpart clean[/dim]")
+    console.print(f"[{th()['danger']}]  [2][/{th()['danger']}] Tueur   [dim]- diskpart clean all, overwrite complet[/dim]")
+    mode = console.input(f"\n[{col}]  Mode de nettoyage ❯ [/{col}]").strip()
+    if mode not in ("1", "2"):
+        error("Mode invalide.")
+        return
+
+    console.print()
+    console.print(f"[{col}]  [1][/{col}] NTFS  [dim](recommandé Windows)[/dim]")
+    console.print(f"[{col}]  [2][/{col}] exFAT [dim](compatible Windows/macOS)[/dim]")
+    fs_choice = console.input(f"\n[{col}]  Format final [dim](default: 1)[/dim] ❯ [/{col}]").strip() or "1"
+    if fs_choice not in ("1", "2"):
+        error("Format invalide.")
+        return
+    fs = "exfat" if fs_choice == "2" else "ntfs"
+
+    mode_label = "Tueur / clean all" if mode == "2" else "Rapide / clean"
+    clean_command = "clean all" if mode == "2" else "clean"
+    commands = [
+        f"select disk {disk['number']}",
+        clean_command,
+        "create partition primary",
+        f"format fs={fs} quick",
+        "assign",
+        "active",
+        "exit",
+    ]
+
+    warn(f"Vous allez effacer le Disque {disk['number']} : {disk['name']} ({_format_disk_size(disk['size'])}).")
+    if disk["letters"] != "-":
+        warn(f"Lettre(s) actuellement associée(s) : {disk['letters']}")
+    if disk["is_boot"] or disk["is_system"]:
+        warn("Ce disque est marqué BOOT/SYSTEME. Vérifiez deux fois avant de continuer.")
+
+    confirmation = console.input(
+        f"\n[{th()['danger']}]  Tapez OUI pour confirmer l'effacement du Disque {disk['number']} ❯ [/{th()['danger']}]"
+    ).strip()
+    if confirmation != "OUI":
+        info("Opération annulée.")
+        return
+
+    if disk["is_boot"] or disk["is_system"]:
+        second_confirmation = console.input(
+            f"[{th()['danger']}]  Sécurité système : tapez SYSTEME pour continuer ❯ [/{th()['danger']}]"
+        ).strip()
+        if second_confirmation != "SYSTEME":
+            info("Opération annulée.")
+            return
+
+    info("Diskpart va nettoyer, recréer la partition principale, formater, assigner une lettre et activer la partition.")
+    try:
+        returncode, output = _run_diskpart_script(commands, mode_label)
+    except FileNotFoundError:
+        error("diskpart.exe est introuvable sur ce système.")
+        return
+    except Exception as exc:
+        error(f"Erreur Diskpart : {exc}")
+        return
+
+    output = (output or "").strip()
+    if returncode != 0 or _diskpart_output_has_error(output):
+        error("Diskpart a signalé une erreur. Vérifiez le journal ci-dessous avant de réessayer.")
+        if output:
+            console.print(Panel(output[-2500:], title="Journal Diskpart", border_style=th()["danger"], box=th()["box"]))
+        return
+
+    success("Opération terminée avec succès !")
+    info("Appuyez sur Entrée pour revenir au menu principal.")
+
+# ═══════════════════════════════════════════════════════
+#  OUTILS TEXTE
+# ═══════════════════════════════════════════════════════
+
+def text_tools():
+    col = th()["cat_uti"]
+    console.print(f"\n  [{col}]Outils texte disponibles :[/{col}]")
+    console.print(f"  [dim]1[/dim] Majuscules   [dim]2[/dim] Minuscules   [dim]3[/dim] Inverser   [dim]4[/dim] Slugify")
+    console.print(f"  [dim]5[/dim] ROT13        [dim]6[/dim] Compteur      [dim]7[/dim] UUID       [dim]8[/dim] Capitalize")
+    op = console.input(f"\n[{col}]  Choix ❯ [/{col}]").strip()
+    text = console.input(f"[{col}]  Texte ❯ [/{col}]")
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Action", style=col, width=14)
+    t_ui.add_column("Résultat", style="white", width=60)
+
+    import codecs as codecs_lib
+    try:
+        if op == "1":
+            t_ui.add_row("Majuscules", text.upper())
+        elif op == "2":
+            t_ui.add_row("Minuscules", text.lower())
+        elif op == "3":
+            t_ui.add_row("Inversé", text[::-1])
+        elif op == "4":
+            slug = re.sub(r'[^\w\s-]', '', text.lower())
+            slug = re.sub(r'[-\s]+', '-', slug).strip('-')
+            t_ui.add_row("Slug", slug)
+        elif op == "5":
+            t_ui.add_row("ROT13", codecs_lib.encode(text, 'rot_13'))
+        elif op == "6":
+            lines = text.count('\n') + (0 if text.endswith('\n') or not text else 1)
+            words = len(text.split()) if text.strip() else 0
+            chars = len(text)
+            t_ui.add_row("Lignes", str(lines))
+            t_ui.add_row("Mots", str(words))
+            t_ui.add_row("Caractères", str(chars))
+        elif op == "7":
+            t_ui.add_row("UUID", str(uuid.uuid4()))
+        elif op == "8":
+            t_ui.add_row("Capitalize", text.capitalize())
+        else:
+            error("Choix invalide.")
+    except Exception as e:
+        t_ui.add_row("[red]Erreur[/red]", str(e))
+    console.print(t_ui)
+
+# ═══════════════════════════════════════════════════════
+#  DATE & HEURE
+# ═══════════════════════════════════════════════════════
+
+def timestamp_converter():
+    col = th()["primary"]
+    console.print(f"\n  [{col}]Opérations :[/{col}]")
+    console.print(f"  [dim]1[/dim] Timestamp actuel   [dim]2[/dim] Timestamp → Date   [dim]3[/dim] Différence entre dates")
+    op = console.input(f"\n[{col}]  Choix ❯ [/{col}]").strip()
+
+    if op == "1":
+        now = datetime.now()
+        t_ui = themed_table(border_style=col)
+        t_ui.add_column("Format", style=col, width=18)
+        t_ui.add_column("Valeur", style="white", width=50)
+        t_ui.add_row("ISO 8601", now.isoformat())
+        t_ui.add_row("Unix (s)", str(int(now.timestamp())))
+        t_ui.add_row("Formaté", now.strftime("%Y-%m-%d %H:%M:%S"))
+        t_ui.add_row("Date", now.strftime("%d/%m/%Y"))
+        console.print(t_ui)
+
+    elif op == "2":
+        raw = console.input(f"[{col}]  Timestamp (secondes ou ms) ❯ [/{col}]").strip()
+        try:
+            ts = float(raw)
+            if ts > 1e12: ts /= 1000
+            dt = datetime.fromtimestamp(ts)
+            success(f"Date : [bold white]{dt.isoformat()}[/bold white]")
+        except Exception:
+            error("Timestamp invalide.")
+
+    elif op == "3":
+        fmt = "%Y-%m-%d %H:%M:%S"
+        d1 = console.input(f"[{col}]  Date 1 [dim](ex: 2026-01-01 12:00:00)[/dim] ❯ [/{col}]").strip()
+        d2 = console.input(f"[{col}]  Date 2 ❯ [/{col}]").strip()
+        try:
+            dt1 = datetime.strptime(d1, fmt)
+            dt2 = datetime.strptime(d2, fmt)
+            diff = abs((dt2 - dt1).total_seconds())
+            days = int(diff // 86400)
+            hours = int((diff % 86400) // 3600)
+            mins = int((diff % 3600) // 60)
+            secs = int(diff % 60)
+            success(f"Différence : [bold]{days}j {hours}h {mins}m {secs}s[/bold]")
+        except Exception:
+            error("Format invalide. Utilisez: YYYY-MM-DD HH:MM:SS")
+    else:
+        error("Choix invalide.")
+
+# ═══════════════════════════════════════════════════════
+#  OUTILS COULEUR
+# ═══════════════════════════════════════════════════════
+
+def color_tools():
+    col = th()["primary"]
+    console.print(f"\n  [{col}]Outils couleur :[/{col}]")
+    console.print(f"  [dim]1[/dim] Hex → RGB   [dim]2[/dim] RGB → Hex   [dim]3[/dim] Palette")
+    op = console.input(f"\n[{col}]  Choix ❯ [/{col}]").strip()
+
+    if op == "1":
+        h = console.input(f"[{col}]  Hex [dim](ex: ff5733 ou #ff5733)[/dim] ❯ [/{col}]").strip().lstrip('#')
+        try:
+            r, g, b = tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+            t_ui = themed_table(border_style=col)
+            t_ui.add_column("Format", style=col, width=14)
+            t_ui.add_column("Valeur", style="white", width=30)
+            t_ui.add_row("RGB", f"rgb({r}, {g}, {b})")
+            t_ui.add_row("RGB %", f"rgb({r*100//255}%, {g*100//255}%, {b*100//255}%)")
+            console.print(t_ui)
+        except Exception:
+            error("Hex invalide.")
+
+    elif op == "2":
+        raw = console.input(f"[{col}]  RGB [dim](ex: 255,87,51 ou rgb(255,87,51))[/dim] ❯ [/{col}]").strip()
+        m = re.match(r'rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)', raw)
+        if not m: m = re.match(r'(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', raw)
+        if m:
+            r, g, b = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            success(f"Hex : [bold white]#{r:02x}{g:02x}{b:02x}[/bold white]")
+        else:
+            error("Format RGB invalide.")
+
+    elif op == "3":
+        console.print()
+        for i in range(16):
+            r = int(255 * (i / 15))
+            g = int(255 * (1 - abs(i - 7.5) / 7.5))
+            b = int(255 * (1 - i / 15))
+            hex_color = '#{:02x}{:02x}{:02x}'.format(r, g, b)
+            console.print(f"  [dim]{i:2d}[/dim]  [white]{hex_color}[/white]  [on rgb({r},{g},{b})]    [/on rgb({r},{g},{b})]  rgb({r},{g},{b})")
+        console.print()
+    else:
+        error("Choix invalide.")
+
+# ═══════════════════════════════════════════════════════
+#  ENCODEURS
+# ═══════════════════════════════════════════════════════
+
+def url_html_tools():
+    col = th()["cat_uti"]
+    console.print(f"\n  [{col}]Encodeurs :[/{col}]")
+    console.print(f"  [dim]1[/dim] URL Encode   [dim]2[/dim] URL Decode   [dim]3[/dim] HTML Entities")
+    console.print(f"  [dim]4[/dim] Morse Encode [dim]5[/dim] Morse Decode")
+    op = console.input(f"\n[{col}]  Choix ❯ [/{col}]").strip()
+    text = console.input(f"[{col}]  Texte ❯ [/{col}]")
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Action", style=col, width=14)
+    t_ui.add_column("Résultat", style="white", width=60)
+
+    try:
+        if op == "1":
+            t_ui.add_row("URL Encodé", urllib.parse.quote(text))
+        elif op == "2":
+            t_ui.add_row("URL Décodé", urllib.parse.unquote(text))
+        elif op == "3":
+            encoded = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+            decoded = text.replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"').replace('&amp;', '&')
+            t_ui.add_row("HTML Encoded", encoded)
+            t_ui.add_row("HTML Decoded", decoded)
+        elif op == "4":
+            MORSE = {'A':'.-','B':'-...','C':'-.-.','D':'-..','E':'.','F':'..-.','G':'--.','H':'....','I':'..','J':'.---','K':'-.-','L':'.-..','M':'--','N':'-.','O':'---','P':'.--.','Q':'--.-','R':'.-.','S':'...','T':'-','U':'..-','V':'...-','W':'.--','X':'-..-','Y':'-.--','Z':'--..','0':'-----','1':'.----','2':'..---','3':'...--','4':'....-','5':'.....','6':'-....','7':'--...','8':'---..','9':'----.'}
+            result = ' '.join(MORSE.get(c.upper(), c) for c in text if c != ' ')
+            t_ui.add_row("Morse", result)
+        elif op == "5":
+            MORSE_REV = {v:k for k,v in {'A':'.-','B':'-...','C':'-.-.','D':'-..','E':'.','F':'..-.','G':'--.','H':'....','I':'..','J':'.---','K':'-.-','L':'.-..','M':'--','N':'-.','O':'---','P':'.--.','Q':'--.-','R':'.-.','S':'...','T':'-','U':'..-','V':'...-','W':'.--','X':'-..-','Y':'-.--','Z':'--..','0':'-----','1':'.----','2':'..---','3':'...--','4':'....-','5':'.....','6':'-....','7':'--...','8':'---..','9':'----.'}.items()}
+            result = ''.join(MORSE_REV.get(code, '?') for code in text.split())
+            t_ui.add_row("Texte", result)
+        else:
+            error("Choix invalide.")
+    except Exception as e:
+        t_ui.add_row("[red]Erreur[/red]", str(e))
+    console.print(t_ui)
+
+# ═══════════════════════════════════════════════════════
+#  GÉNÉRATEUR ALÉATOIRE
+# ═══════════════════════════════════════════════════════
+
+def random_generator():
+    col = th()["cat_uti"]
+    console.print(f"\n  [{col}]Générateurs :[/{col}]")
+    console.print(f"  [dim]1[/dim] UUID v4      [dim]2[/dim] Chaîne aléatoire   [dim]3[/dim] Hex aléatoire")
+    console.print(f"  [dim]4[/dim] IP aléatoire [dim]5[/dim] MAC aléatoire")
+    op = console.input(f"\n[{col}]  Choix ❯ [/{col}]").strip()
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Type", style=col, width=16)
+    t_ui.add_column("Valeur", style="bold white", width=54)
+
+    try:
+        if op == "1":
+            for _ in range(3):
+                t_ui.add_row("UUID v4", str(uuid.uuid4()))
+        elif op == "2":
+            length = int(console.input(f"[{col}]  Longueur [dim](default 16)[/dim] ❯ [/{col}]") or "16")
+            t_ui.add_row("Lettres+Chiffres", ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(length)))
+            t_ui.add_row("Lettres+Speciaux", ''.join(random.choice(string.ascii_letters + string.digits + string.punctuation) for _ in range(length)))
+        elif op == "3":
+            length = int(console.input(f"[{col}]  Longueur [dim](default 16)[/dim] ❯ [/{col}]") or "16")
+            t_ui.add_row("Hex", ''.join(random.choice('0123456789abcdef') for _ in range(length)))
+        elif op == "4":
+            for _ in range(3):
+                octets = [str(random.randint(0, 255)) for _ in range(4)]
+                t_ui.add_row("IPv4", '.'.join(octets))
+        elif op == "5":
+            for _ in range(3):
+                mac = ':'.join(['{:02x}'.format(random.randint(0, 255)) for _ in range(6)])
+                t_ui.add_row("MAC", mac)
+        else:
+            error("Choix invalide.")
+    except Exception as e:
+        t_ui.add_row("[red]Erreur[/red]", str(e))
+    console.print(t_ui)
+
+# ═══════════════════════════════════════════════════════
+#  COMPARATEUR
+# ═══════════════════════════════════════════════════════
+
+def diff_checker():
+    col = th()["primary"]
+    console.print(f"\n  [{col}]Comparateur de textes :[/{col}]")
+    text1 = console.input(f"[{col}]  Texte 1 ❯ [/{col}]")
+    text2 = console.input(f"[{col}]  Texte 2 ❯ [/{col}]")
+    lines1 = text1.splitlines()
+    lines2 = text2.splitlines()
+    max_lines = max(len(lines1), len(lines2))
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("#", style="dim", width=4)
+    t_ui.add_column("Texte 1", style="white", width=30)
+    t_ui.add_column("Texte 2", style="white", width=30)
+    t_ui.add_column("Statut", width=10)
+
+    for i in range(max_lines):
+        l1 = lines1[i] if i < len(lines1) else ""
+        l2 = lines2[i] if i < len(lines2) else ""
+        if l1 == l2:
+            status = "[green]=[/green]"
+            c1, c2 = "white", "white"
+        else:
+            status = "[red]≠[/red]"
+            c1, c2 = "red", "red"
+        t_ui.add_row(str(i+1), f"[{c1}]{l1[:28]}[/{c1}]", f"[{c2}]{l2[:28]}[/{c2}]", status)
+    console.print(t_ui)
+
 #  ROUTER
 # ═══════════════════════════════════════════════════════
 ACTIONS = {
@@ -1821,7 +2652,7 @@ ACTIONS = {
     "26": speedtest_basic,
     "27": change_theme,
     "28": show_history,
-    # ── NOUVEAU v4.2 ──
+    # Modules additionnels
     "29": firewall_rules,
     "30": ssh_audit,
     "31": watcher_logs,
@@ -1834,6 +2665,13 @@ ACTIONS = {
     "38": subnet_calc,
     "39": mac_lookup,
     "40": rename_tool,
+    "41": diskpart_simplifie,
+    "42": text_tools,
+    "43": timestamp_converter,
+    "44": color_tools,
+    "45": url_html_tools,
+    "46": random_generator,
+    "47": diff_checker,
 }
 
 # ═══════════════════════════════════════════════════════
@@ -1841,7 +2679,6 @@ ACTIONS = {
 # ═══════════════════════════════════════════════════════
 def main():
     while True:
-        banner()
         choice = draw_menu()
 
         if choice in ("00","0","quit","q","exit"):

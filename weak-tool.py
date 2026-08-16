@@ -1,32 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-  ██████╗ ██████╗ ██╗███╗   ███╗███████╗
-  ██╔══██╗██╔══██╗██║████╗ ████║██╔════╝
-  ██████╔╝██████╔╝██║██╔████╔██║█████╗
-  ██╔═══╝ ██╔══██╗██║██║╚██╔╝██║██╔══╝
-  ██║     ██║  ██║██║██║ ╚═╝ ██║███████╗
-  ╚═╝     ╚═╝  ╚═╝╚═╝╚═╝     ╚═╝╚══════╝
-
-  Multi-Tool Terminal v1.5.0 — durci (audit de securite + corrections)
-  v1.5.0 : filtre live + favoris visibles + raccourci *code, 2 nouveaux
-           themes, transition d'entree animee, jauge CPU/RAM en pied de
-           menu, modules enrichis (hash, mdp, systeme, disque).
-
-  Options : --no-update  --theme <nom>  --lang fr|en  --debug  --version
-  Variable d'environnement : WEAK_TOOL_DEBUG=1 pour les traces completes.
-
-  Regles internes appliquees dans ce fichier :
-    * aucun subprocess avec shell=True, jamais de commande construite par
-      concatenation de chaines ;
-    * toute entree utilisateur destinee a une commande externe passe par
-      valid_host() / ask_int() / une regex stricte ;
-    * toute donnee non fiable affichee passe par esc() ou raw_print() ;
-    * toute lecture reseau ou fichier est bornee (read_capped / tail_lines) ;
-    * tout ce qui doit etre imprevisible vient de `secrets`, jamais de `random` ;
-    * toute operation destructive demande une confirmation explicite.
-"""
-
 import os
 import sys
 import ast
@@ -65,8 +38,6 @@ if hasattr(sys.stdout, "reconfigure"):
 
 # ── AUTO-INSTALL ──────────────────────────────────────────
 def _ensure(*pkgs):
-    """Installe les dependances manquantes. Les echecs sont signales,
-    pas avales silencieusement (l'ancien code laissait planter l'import juste apres)."""
     missing = []
     for p in pkgs:
         try:
@@ -113,19 +84,33 @@ console = Console()
 MAX_DOWNLOAD_BYTES = 32 * 1024 * 1024   # plafond dur sur toute reponse HTTP lue
 DEBUG = os.environ.get("WEAK_TOOL_DEBUG") == "1"
 
+# ── Symboles ─────────────────────────────────────────────
+# Les emoji hors du plan multilingue de base (U+FFFF et au-dela) n'ont pas de
+# glyphe dans les polices par defaut de la console Windows classique : ils y
+# apparaissent en carres vides. Chacun a donc un equivalent qui, lui, s'affiche
+# partout. Le repli est automatique sur console Windows en mode restreint,
+# et forcable avec --ascii ou WEAK_TOOL_ASCII=1.
+ASCII_MODE = os.environ.get("WEAK_TOOL_ASCII") == "1"
+
+SYMBOLS = {
+    "lock":   ("🔒", "[!]"),
+    "rocket": ("🚀", ">>>"),
+    "live":   ("🟢", "*"),
+}
+
+
+def sym(name: str) -> str:
+    fancy, plain = SYMBOLS.get(name, ("", ""))
+    if ASCII_MODE or getattr(console, "legacy_windows", False):
+        return plain
+    return fancy
+
 
 def esc(value) -> str:
-    """Neutralise le balisage Rich dans une donnee non fiable.
-
-    Sans ca, une ligne de log, une variable d'environnement ou la sortie
-    d'une commande contenant '[/]' etait interpretee comme du balisage :
-    au mieux l'affichage etait corrompu, au pire MarkupError tuait l'outil.
-    """
     return _rich_escape(str(value))
 
 
 def raw_print(value=""):
-    """Affiche du texte non fiable sans passer par le parseur de balisage."""
     console.print(str(value), markup=False, highlight=False)
 
 
@@ -137,12 +122,6 @@ _HOSTNAME_RE = re.compile(
 
 
 def valid_host(host: str) -> bool:
-    """True si `host` est une IP ou un nom d'hote exploitable sans risque.
-
-    Bloque notamment les valeurs commencant par '-', qui etaient sinon
-    interpretees comme des OPTIONS par ping/traceroute/arp
-    (ex: '-f' => flood ping) : injection d'arguments.
-    """
     if not host or len(host) > 253 or host.startswith("-"):
         return False
     if any(c.isspace() for c in host):
@@ -156,7 +135,6 @@ def valid_host(host: str) -> bool:
 
 
 def ask_host(col, label="Host", default=None):
-    """Demande un hote et le valide. Retourne None si invalide/annule."""
     suffix = f" [dim](default: {default})[/dim]" if default else ""
     raw = console.input(f"[{col}]  {label}{suffix} ❯ [/{col}]").strip()
     host = raw or (default or "")
@@ -169,7 +147,6 @@ def ask_host(col, label="Host", default=None):
 
 
 def ask_int(col, label, default, minimum, maximum):
-    """Entier borne. Evite les valeurs absurdes (longueur 10**9, port 999999...)."""
     raw = console.input(f"[{col}]  {label} [dim](default: {default})[/dim] ❯ [/{col}]").strip()
     if not raw:
         return default
@@ -186,11 +163,6 @@ def ask_int(col, label, default, minimum, maximum):
 
 # ── Execution de commandes ───────────────────────────────
 def safe_run(cmd, timeout=10, capture=True, check_args=True):
-    """subprocess.run centralise. Jamais shell=True, jamais de chaine.
-
-    Refuse tout argument commencant par '-' qui ne fait pas partie du
-    gabarit d'appel : c'est la porte d'entree de l'injection d'arguments.
-    """
     if isinstance(cmd, str):
         raise ValueError("safe_run exige une liste d'arguments, pas une chaine.")
     cmd = [str(c) for c in cmd]
@@ -205,11 +177,6 @@ def safe_run(cmd, timeout=10, capture=True, check_args=True):
 
 # ── Fichiers de configuration ────────────────────────────
 def write_private_json(path, data):
-    """Ecrit un JSON lisible par le seul proprietaire (0600).
-
-    L'ancien code laissait les fichiers en 0644 : sur une machine
-    partagee, n'importe quel utilisateur pouvait les lire ET les modifier.
-    """
     tmp = f"{path}.tmp"
     try:
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -231,11 +198,6 @@ def write_private_json(path, data):
 
 # ── Reseau ───────────────────────────────────────────────
 def read_capped(resp, limit=MAX_DOWNLOAD_BYTES):
-    """Lit une reponse HTTP avec un plafond.
-
-    resp.read() sans limite permettait a un serveur hostile (ou a une
-    redirection) de saturer la RAM avec une reponse de plusieurs Go.
-    """
     buf = bytearray()
     while True:
         chunk = resp.read(65536)
@@ -248,7 +210,6 @@ def read_capped(resp, limit=MAX_DOWNLOAD_BYTES):
 
 
 def https_get_json(url, timeout=5, headers=None):
-    """GET JSON en HTTPS strict. Rejette tout schema autre que https."""
     if not url.lower().startswith("https://"):
         raise ValueError("Seul HTTPS est autorise.")
     req = urllib.request.Request(url, headers=headers or {"User-Agent": f"{TOOL_NAME}"})
@@ -260,11 +221,6 @@ def https_get_json(url, timeout=5, headers=None):
 
 # ── Fichiers ─────────────────────────────────────────────
 def tail_lines(path, n, chunk_size=8192):
-    """Lit les n dernieres lignes en remontant depuis la fin.
-
-    L'ancien `f.readlines()[-n:]` chargeait le fichier entier en memoire :
-    un /var/log/syslog de plusieurs Go faisait exploser le processus.
-    """
     n = max(1, n)
     with open(path, "rb") as f:
         f.seek(0, os.SEEK_END)
@@ -282,7 +238,6 @@ def tail_lines(path, n, chunk_size=8192):
 
 
 def inside(child, parent):
-    """True si `child` est reellement contenu dans `parent` (anti-traversee)."""
     try:
         child = os.path.realpath(child)
         parent = os.path.realpath(parent)
@@ -292,7 +247,7 @@ def inside(child, parent):
 
 # ── CONFIG ───────────────────────────────────────────────
 TOOL_NAME    = "weak-tool"
-VERSION      = "v1.5.0"
+VERSION      = "v1.6.0"
 LANG         = "fr"
 CMD_HISTORY  = deque(maxlen=20)
 MENU_ANIM_DELAY = 0.08
@@ -410,9 +365,28 @@ THEMES = {
         "dots": "❄ · ❄ · ❄ · ❄ · ❄ · ❄ · ❄ · ❄ · ❄ · ❄ · ❄ · ❄ · ❄ · ❄",
         "box": box.MINIMAL_DOUBLE_HEAD,
     },
+    "arcade": {
+        "name": "Arcade ★", "primary": "bright_magenta", "secondary": "bright_yellow",
+        "accent": "bright_cyan", "danger": "bright_red", "success": "bright_green",
+        "warning": "bright_yellow", "dim_col": "purple4", "border": "bright_magenta",
+        "cat_sys": "bright_yellow", "cat_net": "bright_green", "cat_mon": "bright_cyan",
+        "cat_uti": "bright_magenta", "cat_adv": "bright_red",
+        "dots": "◄ ► ▲ ▼ ◄ ► ▲ ▼ ◄ ► ▲ ▼ ◄ ► ▲ ▼ ◄ ► ▲ ▼ ◄ ► ▲ ▼ ◄ ►",
+        "box": box.DOUBLE_EDGE,
+    },
 }
 THEME_NAMES = list(THEMES.keys())
 CURRENT_THEME_IDX = THEME_NAMES.index("blue-magic")
+
+# Themes qui n'apparaissent qu'une fois le secret trouve.
+HIDDEN_THEMES = {"arcade"}
+KONAMI_UNLOCKED = False
+
+
+def visible_theme_names():
+    if KONAMI_UNLOCKED:
+        return list(THEME_NAMES)
+    return [n for n in THEME_NAMES if n not in HIDDEN_THEMES]
 
 
 def th():
@@ -447,6 +421,8 @@ def t(key: str) -> str:
         "n51": "JSON / CSV / YAML", "n52": "Testeur Regex", "n53": "Explicateur Cron",
         "n54": "Exporter Résultat", "n55": "Inspecteur TLS", "n56": "En-têtes HTTP",
         "n57": "Enregistrements DNS", "n58": "Décodeur JWT", "n59": "Préférences",
+        "n60": "Batterie / Alim", "n61": "Phrase de Passe", "n62": "Intégrité Fichiers",
+        "n63": "Benchmark", "n64": "Ports en Écoute", "n99": "Mode Arcade",
         "theme": "Changer Thème", "hist": "Historique", "lang": "Langue (FR/EN)",
         "quit": "[ QUITTER ]", "prompt": "  ❯ ", "bye": "À plus !",
         "err": "Choix invalide.", "pause": "  ↵ Entrée pour continuer..."
@@ -477,6 +453,8 @@ def t(key: str) -> str:
         "n51": "JSON / CSV / YAML", "n52": "Regex Tester", "n53": "Cron Explainer",
         "n54": "Export Result", "n55": "TLS Inspector", "n56": "HTTP Headers",
         "n57": "DNS Records", "n58": "JWT Decoder", "n59": "Preferences",
+        "n60": "Battery / Power", "n61": "Passphrase", "n62": "File Integrity",
+        "n63": "Benchmark", "n64": "Listening Ports", "n99": "Arcade Mode",
         "theme": "Change Theme", "hist": "History", "lang": "Language (EN/FR)",
         "quit": "[ QUIT ]", "prompt": "  ❯ ", "bye": "See ya!",
         "err": "Invalid choice.", "pause": "  ↵ Press Enter to continue..."
@@ -510,12 +488,6 @@ def is_admin():
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
 
 def themed_table(*args, **kwargs):
-    """Cree un tableau au theme courant.
-
-    v1.4.0 : le tableau enregistre au passage ses colonnes et ses lignes dans
-    LAST_RESULT, ce qui permet au module 54 d'exporter en JSON/CSV/HTML le
-    resultat de n'importe quel module, sans toucher aux 47 autres.
-    """
     kwargs.setdefault("box", th()["box"])
     kwargs.setdefault("border_style", th()["border"])
     kwargs.setdefault("row_styles", ["", "dim"])
@@ -535,18 +507,28 @@ def info(msg):
 def warn(msg):
     console.print(f"  [{th()['warning']}]⚠ {msg}[/{th()['warning']}]")
 
-def sensitive_notice(detail: str = ""):
-    """Avertit avant d'afficher une info sensible (IP, reseau local, secrets,
-    mots de passe...) au cas ou l'ecran serait observe ou partage."""
+def sensitive_notice(detail: str = "") -> bool:
     col = th()["warning"]
     suffix = f" ({detail})" if detail else ""
-    console.print(f"  [{col}]🔒 Info sensible à l'écran{suffix} — vérifie que "
-                  f"personne ne regarde et que ton écran n'est pas partagé.[/{col}]")
+    console.print(f"  [{col}]{sym('lock')} Info sensible{suffix}[/{col}]")
+    console.print(f"  [{col}]Rien n'est encore affiché. Vérifie que personne ne regarde "
+                  f"et que ton écran n'est pas partagé.[/{col}]")
     console.print()
+    try:
+        answer = console.input(
+            f"  [{col}]↵ Entrée pour afficher · [dim]n[/dim] pour annuler ❯ [/{col}]"
+        ).strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        console.print()
+        info("Affichage annulé.")
+        return False
+    if answer in ("n", "non", "no", "q"):
+        info("Affichage annulé.")
+        return False
+    console.print()
+    return True
 
 def _human_duration(seconds: float) -> str:
-    """Formate une duree en secondes en texte lisible (jusqu'au siecle,
-    en notation scientifique au-dela de 10^6 unites)."""
     if seconds < 1:
         return "< 1 seconde"
     units = [
@@ -630,12 +612,6 @@ def _is_developer_version(local, remote):
         return False
 
 def _fetch_latest_release():
-    """Recupere la derniere release.
-
-    Corrige : l'ancienne garde `if GITHUB_REPO == "Loeylbs/weak-tool": return None`
-    desactivait l'auto-update en permanence (le depot EST celui-la), et l'URL
-    etait ecrite en dur au lieu d'utiliser GITHUB_REPO.
-    """
     if not UPDATE_ENABLED or not GITHUB_REPO or "/" not in GITHUB_REPO:
         return None
     owner, _, repo = GITHUB_REPO.partition("/")
@@ -651,7 +627,6 @@ def _fetch_latest_release():
 
 
 def _is_trusted_update_url(url: str) -> bool:
-    """N'accepte qu'une URL HTTPS servie par un hote GitHub connu."""
     try:
         parsed = urllib.parse.urlsplit(url)
     except ValueError:
@@ -680,7 +655,6 @@ def _pick_asset(release):
 
 
 def _pick_checksum_asset(release, asset):
-    """Cherche l'asset '<nom>.sha256' publie a cote du script."""
     wanted = f"{asset.get('name', '')}.sha256".lower()
     for a in release.get("assets") or []:
         if a.get("name", "").lower() == wanted:
@@ -690,7 +664,6 @@ def _pick_checksum_asset(release, asset):
 
 
 def _fetch_expected_digest(asset_ck):
-    """Telecharge et extrait le SHA-256 attendu (format 'sha256  nom')."""
     try:
         req = urllib.request.Request(
             asset_ck["browser_download_url"],
@@ -706,14 +679,6 @@ def _fetch_expected_digest(asset_ck):
     return token if len(token) == 64 and all(c in "0123456789abcdef" for c in token) else None
 
 def _download_with_progress(url, dest_path):
-    """Telecharge en verifiant l'hote, en bornant la taille, et renvoie le SHA-256.
-
-    Corrige :
-      - l'URL venait telle quelle du JSON de l'API, sans controle de schema
-        ni d'hote (une reponse falsifiee pouvait pointer n'importe ou) ;
-      - la boucle de lecture etait sans plafond : disque sature garanti ;
-      - aucun condensat n'etait calcule, donc rien a verifier ensuite.
-    """
     from rich.progress import (Progress, BarColumn, DownloadColumn,
                                 TransferSpeedColumn, TimeRemainingColumn)
     if not _is_trusted_update_url(url):
@@ -750,9 +715,6 @@ def _download_with_progress(url, dest_path):
 
 
 def _looks_like_weak_tool(path):
-    """Garde-fou minimal : le fichier telecharge doit etre du Python valide
-    et ressembler a ce script. Empeche d'ecraser l'outil par un binaire,
-    une page d'erreur HTML ou un fichier tronque."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             code = f.read()
@@ -779,7 +741,7 @@ def _show_update_panel(local_v, remote_v, changelog):
     )
     console.print(Panel(
         panel_text,
-        title=f"[bold {th()['warning']}]🚀 MISE A JOUR DISPONIBLE[/bold {th()['warning']}]",
+        title=f"[bold {th()['warning']}]{sym('rocket')} MISE A JOUR DISPONIBLE[/bold {th()['warning']}]",
         border_style=th()["warning"],
         box=th()["box"],
     ))
@@ -830,22 +792,6 @@ def _spawn_relay_updater(new_path, target_path):
         subprocess.Popen([sys.executable, relay_path], start_new_session=True)
 
 def _apply_update(asset, release=None):
-    """Installe une mise a jour APRES verification.
-
-    C'etait la faille la plus grave de l'outil : le fichier telecharge
-    remplacait directement le script en cours d'execution, sans aucune
-    verification d'integrite. N'importe quelle reponse d'API falsifiee
-    (MITM, DNS, compte de release compromis, redirection) donnait une
-    execution de code arbitraire au prochain lancement.
-
-    Desormais :
-      1. hote et schema verifies au telechargement ;
-      2. SHA-256 compare a l'asset '<nom>.sha256' publie a cote ;
-      3. si aucun condensat n'est publie, l'empreinte est affichee et
-         l'utilisateur doit confirmer explicitement ;
-      4. le contenu doit etre du Python valide ressemblant a weak-tool ;
-      5. sauvegarde .bak obligatoire, restauree si le remplacement echoue.
-    """
     script_path = os.path.abspath(__file__)
     script_dir  = os.path.dirname(script_path)
     tmp_path    = os.path.join(script_dir, f".{TOOL_NAME}_new.tmp")
@@ -997,6 +943,8 @@ def _gradient_banner(ascii_logo: str):
         gradient = ["gold1","orange1","deep_pink3","orange1","gold1","hot_pink"]
     elif theme_key == "arctic":
         gradient = ["light_cyan1","sky_blue1","deep_sky_blue1","steel_blue1","sky_blue1","light_cyan1"]
+    elif theme_key == "arcade":
+        gradient = ["bright_magenta","bright_yellow","bright_cyan","bright_green","bright_yellow","bright_magenta"]
     else:
         gradient = ["white","bright_white","white","bright_white","white","white"]
 
@@ -1085,13 +1033,13 @@ def banner():
 
 # ── CATÉGORIES DU MENU ────────────────────────────────────
 def get_cats():
-    """Contenu du menu. Les modules mis en favori sont prefixes d'une etoile."""
     cats = [
         (t("c_sys"), th()["cat_sys"], [
             ("01", t("sys1")), ("02", t("sys2")), ("03", t("sys3")),
             ("04", t("sys4")), ("05", t("sys5")), ("06", t("sys6")),
             ("32", t("new4")), ("33", t("new5")), ("37", t("new9")),
-            ("41", t("new13")), ("48", t("n48")),
+            ("41", t("new13")), ("48", t("n48")), ("60", t("n60")),
+            ("62", t("n62")), ("63", t("n63")),
         ]),
         (t("c_net"), th()["cat_net"], [
             ("07", t("net1")), ("08", t("net2")), ("09", t("net3")),
@@ -1099,6 +1047,7 @@ def get_cats():
             ("29", t("new1")), ("30", t("new2")), ("34", t("new6")),
             ("35", t("new7")), ("38", t("new10")), ("39", t("new11")),
             ("55", t("n55")), ("56", t("n56")), ("57", t("n57")),
+            ("64", t("n64")),
         ]),
         (t("c_mon"), th()["cat_mon"], [
             ("13", t("mon1")), ("14", t("mon2")), ("31", t("new3")),
@@ -1109,7 +1058,7 @@ def get_cats():
             ("42", t("new14")), ("43", t("new15")), ("44", t("new16")),
             ("45", t("new17")), ("46", t("new18")), ("49", t("n49")),
             ("50", t("n50")), ("51", t("n51")), ("52", t("n52")),
-            ("53", t("n53")), ("58", t("n58")),
+            ("53", t("n53")), ("58", t("n58")), ("61", t("n61")),
         ]),
         (t("c_adv"), th()["cat_adv"], [
             ("21", t("adv1")), ("22", t("adv2")), ("23", t("adv3")),
@@ -1119,6 +1068,12 @@ def get_cats():
             ("59", t("n59")), ("00", t("quit")),
         ]),
     ]
+    if KONAMI_UNLOCKED:
+        # Module secret : n'apparait qu'une fois le code trouve.
+        adv = cats[4]
+        items = list(adv[2])
+        items.insert(len(items) - 1, ("99", t("n99")))
+        cats[4] = (adv[0], adv[1], items)
     if not FAVORITES:
         return cats
     return [(title, color, [(code, ("★ " + label) if code in FAVORITES else label)
@@ -1126,13 +1081,6 @@ def get_cats():
             for title, color, items in cats]
 
 def _item_matches(query: str, code: str, label: str) -> bool:
-    """True si `code`/`label` correspond a la recherche en cours de frappe.
-
-    Une requete numerique filtre par prefixe de code (saisie d'un numero de
-    module) ; une requete textuelle filtre par sous-chaine du libelle, comme
-    find_module(), pour que le filtre live et la recherche par nom restent
-    coherents.
-    """
     q = query.strip().lower()
     if not q:
         return True
@@ -1143,8 +1091,6 @@ def _item_matches(query: str, code: str, label: str) -> bool:
 
 
 def _menu_footer_hint(cats, typed: str, dim: str) -> Text:
-    """Ligne d'aide sous le prompt : nombre de correspondances en filtrage,
-    ou astuce de raccourci quand rien n'est tape."""
     if typed:
         matches = sum(1 for _, _, items in cats for code, label in items
                        if code != "00" and _item_matches(typed, code, label))
@@ -1158,8 +1104,6 @@ _GAUGE_CACHE = {"t": 0.0, "cpu": 0.0, "ram": 0.0}
 
 
 def _live_gauge_text(dim: str) -> Text:
-    """Mini jauge CPU/RAM + horloge, rafraichie au plus toutes les 0.6s pour
-    rester lisible plutot que clignoter a chaque frame du spinner."""
     now = time.monotonic()
     if now - _GAUGE_CACHE["t"] > 0.6:
         try:
@@ -1179,8 +1123,6 @@ def _live_gauge_text(dim: str) -> Text:
 
 
 def _favorites_bar(width: int):
-    """Bandeau des modules favoris, affiche au-dessus du menu pour qu'ils
-    sautent aux yeux au lieu de n'etre qu'une simple etoile dans une liste."""
     if not FAVORITES:
         return None
     acc = th()["accent"]
@@ -1231,9 +1173,6 @@ def _make_panel(title: str, color: str, items: list, width: int = 32, border_col
 
 # ── BORDURE TOURNANTE (spinner de chargement) ─────────────
 def _lit_border_render(panel, width: int, border_color: str, phase: int, tail: int = 5) -> Text:
-    """Redessine `panel` avec une portion de sa bordure allumee, qui tourne
-    a chaque appel. Coeur partage par le spinner du menu et la transition
-    d'entree dans un module (section())."""
     opts = console.options.update(width=width)
     lines = console.render_lines(panel, opts, pad=False)
     h = len(lines)
@@ -1284,12 +1223,6 @@ def _terminal_height():
 
 
 def _compact_menu_body(cats, width, typed=""):
-    """Menu dense, pour les terminaux trop courts.
-
-    v1.4.0 : avec 59 modules, le menu en panneaux depasse la hauteur d'un
-    terminal standard et la banniere disparait vers le haut. En dessous de
-    ~40 lignes on bascule sur une grille compacte, qui tient a l'ecran.
-    """
     pri, dim = th()["primary"], th()["dim_col"]
     per_row = max(2, min(5, (width - 4) // 24))
     parts = [Align.center(Text(f"/ {DISPLAY_NAME.upper()} \\  {VERSION}",
@@ -1459,6 +1392,14 @@ def _render_menu_frame(typed="", spin_intro=False):
     console.print(Align.center(_menu_footer_hint(cats, typed, dim)))
     console.print(Align.center(_live_gauge_text(dim)))
 
+_WIN_ARROWS  = {"H": "<UP>", "P": "<DOWN>", "K": "<LEFT>", "M": "<RIGHT>"}
+_UNIX_ARROWS = {"A": "<UP>", "B": "<DOWN>", "C": "<RIGHT>", "D": "<LEFT>"}
+_ARROW_TOKENS = set(_WIN_ARROWS.values())
+KONAMI_SEQUENCE = ["<UP>", "<UP>", "<DOWN>", "<DOWN>",
+                   "<LEFT>", "<RIGHT>", "<LEFT>", "<RIGHT>", "b", "a"]
+KONAMI_TRIGGER = "\x00konami"
+
+
 def _animated_menu_input():
     if not sys.stdin.isatty():
         _render_menu_frame("")
@@ -1472,6 +1413,9 @@ def _animated_menu_input():
     last_spin = 0.0
     term_state = None
 
+    konami = deque(maxlen=len(KONAMI_SEQUENCE))
+    konami_hit = False
+
     if os.name == "nt":
         import msvcrt
 
@@ -1480,9 +1424,8 @@ def _animated_menu_input():
                 return None
             ch = msvcrt.getwch()
             if ch in ("\x00", "\xe0"):
-                if msvcrt.kbhit():
-                    msvcrt.getwch()
-                return ""
+                code = msvcrt.getwch() if msvcrt.kbhit() else ""
+                return _WIN_ARROWS.get(code, "")
             return ch
     else:
         import select
@@ -1499,6 +1442,13 @@ def _animated_menu_input():
                 return None
             return sys.stdin.read(1)
 
+    def note_konami(token):
+        nonlocal konami_hit
+        konami.append(token)
+        if list(konami) == KONAMI_SEQUENCE:
+            konami.clear()
+            konami_hit = True
+
     def handle_key(ch):
         nonlocal typed
         if ch in ("\r", "\n"):
@@ -1510,12 +1460,23 @@ def _animated_menu_input():
             raise KeyboardInterrupt
         if ch in ("\x08", "\x7f"):
             typed = typed[:-1]
+        elif ch in _ARROW_TOKENS:
+            note_konami(ch)
         elif ch == "\x1b":
+            # Sequence ESC [ A/B/C/D des touches flechees sous Unix.
+            seq = ""
             for _ in range(2):
-                if read_key() is None:
+                nxt = read_key()
+                if nxt is None:
                     break
+                seq += nxt
+            if len(seq) == 2 and seq[0] == "[":
+                token = _UNIX_ARROWS.get(seq[1])
+                if token:
+                    note_konami(token)
         elif ch.isprintable():
             typed += ch
+            note_konami(ch.lower())
         return None
 
     try:
@@ -1538,6 +1499,8 @@ def _animated_menu_input():
                         result = handle_key(ch)
                         if result is not None:
                             return result
+                        if konami_hit:
+                            return KONAMI_TRIGGER
                         dirty = True
 
                 current_width = _screen_width()
@@ -1602,7 +1565,7 @@ def _color_for(choice: str) -> tuple:
 def toggle_lang():
     global LANG
     LANG = "en" if LANG == "fr" else "fr"
-    _save_prefs()          # v1.4.0 : le choix survit a la fermeture
+    _save_prefs()          # le choix survit a la fermeture
 
 def system_info():
     u    = platform.uname()
@@ -1761,7 +1724,8 @@ def export_sys():
 # ═══════════════════════════════════════════════════════
 
 def network_info():
-    sensitive_notice("IP publique, localisation, FAI")
+    if not sensitive_notice("IP publique, localisation, FAI"):
+        return
     hostname = socket.gethostname()
     try: lip = socket.gethostbyname(hostname)
     except socket.error: lip = "N/A"
@@ -1800,9 +1764,6 @@ def network_info():
     console.print(t_ui)
 
 def ping_test():
-    """Corrige : l'hote n'etait pas valide. Une valeur commencant par '-'
-    etait interpretee comme une option par ping (`-f` = flood, `-t` = infini
-    sous Windows) : injection d'arguments. Le compteur n'etait pas borne."""
     col  = th()["cat_net"]
     host = ask_host(col, "Host", "8.8.8.8")
     if not host:
@@ -1861,8 +1822,8 @@ def port_checker():
     known = { 21:"FTP", 22:"SSH", 23:"Telnet", 25:"SMTP", 53:"DNS", 80:"HTTP",
               110:"POP3", 143:"IMAP", 443:"HTTPS", 3306:"MySQL", 3389:"RDP",
               5432:"PgSQL", 8080:"HTTP-Alt", 27017:"MongoDB" }
-    # Corrige : les ports n'etaient pas bornes (int('999999') passait) et la
-    # liste n'etait pas plafonnee — 100 000 ports = 100 000 sockets.
+    # Ports bornes a 1-65535 et liste plafonnee : sans ca, une saisie large
+    # ouvrirait autant de sockets que de ports demandes.
     if raw:
         ports = sorted({int(p) for p in raw.split(",")
                         if p.strip().isdigit() and 1 <= int(p) <= 65535})[:1024]
@@ -1898,7 +1859,8 @@ def port_checker():
 
 def scan_lan():
     col = th()["cat_net"]
-    sensitive_notice("appareils et IP du réseau local")
+    if not sensitive_notice("appareils et IP du réseau local"):
+        return
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try: s.connect(("8.8.8.8", 80)); ip = s.getsockname()[0]
     except Exception: ip = "192.168.1.1"
@@ -1961,7 +1923,7 @@ def live_monitor():
             cpu_hist.append(cpu)
             ram_hist.append(ram)
 
-            t_ui = themed_table(title=f"[dim]🟢 Live — {datetime.now().strftime('%H:%M:%S')}[/dim]", border_style=col)
+            t_ui = themed_table(title=f"[dim]{sym('live')} Live — {datetime.now().strftime('%H:%M:%S')}[/dim]", border_style=col)
             t_ui.add_column("Métrique",  style=col, width=14)
             t_ui.add_column("Barre",     style="white", width=20)
             t_ui.add_column("Valeur",    style="white", width=16)
@@ -2052,7 +2014,6 @@ def hash_gen():
     console.print(t_ui)
 
 def _secure_shuffle(seq):
-    """Melange Fisher-Yates alimente par `secrets` (random.shuffle est predictible)."""
     items = list(seq)
     for i in range(len(items) - 1, 0, -1):
         j = secrets.randbelow(i + 1)
@@ -2061,16 +2022,10 @@ def _secure_shuffle(seq):
 
 
 def password_gen():
-    """Generateur de mots de passe.
-
-    Corrige : l'ancienne version utilisait `random` (Mersenne Twister), un PRNG
-    NON cryptographique. 624 sorties observees suffisent a reconstituer son etat
-    interne et donc a rejouer tous les mots de passe generes. Tout passe
-    desormais par `secrets` (CSPRNG de l'OS).
-    """
     import math
     col = th()["cat_uti"]
-    sensitive_notice("mots de passe générés en clair")
+    if not sensitive_notice("mots de passe générés en clair"):
+        return
     n = ask_int(col, "Longueur", 18, 8, 128)
 
     sets = {
@@ -2108,8 +2063,6 @@ def password_gen():
     info(f"Temps de cassage estime hors ligne (10^10 tentatives/s) : {_human_duration(crack_seconds)}")
 
 def pass_checker():
-    """Corrige : le mot de passe etait saisi en clair (echo terminal + historique
-    de defilement + eventuelle capture de session). Passe par getpass."""
     col = th()["cat_uti"]
     console.print(f"[{col}]  Mot de passe à tester [dim](saisie masquée)[/dim][/{col}]")
     try:
@@ -2172,18 +2125,6 @@ def base64_tool():
     console.print(t_ui)
 
 def clean_temp():
-    """Nettoyage des fichiers temporaires.
-
-    Corrige (module le plus destructif de l'outil) : l'ancienne version
-    supprimait SANS AUCUNE CONFIRMATION la totalite de /tmp, /var/tmp et
-    C:\\Windows\\Temp, y compris les fichiers en cours d'utilisation par
-    d'autres sessions et services (sockets, verrous, sessions X11, montages).
-    Consequences observees en pratique : services qui tombent, sessions
-    graphiques cassees, pertes de donnees non recuperables.
-
-    Desormais : analyse d'abord, filtre d'age, confirmation explicite,
-    protection des chemins sensibles, et refus de sortir du repertoire cible.
-    """
     col = th()["cat_uti"]
 
     if os.name == "nt":
@@ -2287,8 +2228,6 @@ def clean_temp():
 # ═══════════════════════════════════════════════════════
 
 def traceroute():
-    """Corrige : cible non validee (meme injection d'arguments que ping)
-    et aucun timeout — un traceroute bloque figeait l'outil indefiniment."""
     col  = th()["cat_adv"]
     host = ask_host(col, "Cible", "8.8.8.8")
     if not host:
@@ -2428,8 +2367,8 @@ def suspicious_processes():
 def speedtest_basic():
     col = th()["cat_adv"]
     console.print(f"\n[dim {col}]Test de débit en cours (téléchargement)...[/dim {col}]\n")
-    # Corrige : l'URL principale etait en HTTP clair (contenu et resultat
-    # manipulables par tout intermediaire reseau).
+    # HTTPS obligatoire : en HTTP clair, contenu et resultat seraient
+    # manipulables par tout intermediaire reseau.
     TEST_URL = "https://speed.cloudflare.com/__down?bytes=1048576"
     FALLBACK = "https://httpbin.org/bytes/524288"
     t_ui = themed_table(border_style=col)
@@ -2442,8 +2381,8 @@ def speedtest_basic():
     for url, label in [(TEST_URL,"1MB.zip"),(FALLBACK,"512KB httpbin")]:
         try:
             start = time.time()
-            # Corrige : resp.read() sans plafond — un serveur hostile pouvait
-            # renvoyer plusieurs Go et saturer la memoire.
+            # Lecture plafonnee : un serveur hostile pourrait renvoyer
+            # plusieurs Go et saturer la memoire.
             with urllib.request.urlopen(url, timeout=10) as resp:
                 data = read_capped(resp, 16 * 1024 * 1024)
             duration = time.time() - start; size_mb = len(data) / 1e6
@@ -2470,9 +2409,12 @@ def show_history():
 def change_theme():
     global CURRENT_THEME_IDX
     old_name = th()["name"]
-    CURRENT_THEME_IDX = (CURRENT_THEME_IDX + 1) % len(THEME_NAMES)
+    names = visible_theme_names()
+    current = THEME_NAMES[CURRENT_THEME_IDX]
+    pos = names.index(current) if current in names else -1
+    CURRENT_THEME_IDX = THEME_NAMES.index(names[(pos + 1) % len(names)])
     success(f"Thème : [bold]{old_name}[/bold] → [bold]{th()['name']}[/bold]")
-    _save_prefs()          # v1.4.0 : le choix survit a la fermeture
+    _save_prefs()          # le choix survit a la fermeture
     time.sleep(0.8)
 
 # ═══════════════════════════════════════════════════════
@@ -2699,7 +2641,8 @@ def watcher_logs():
     console.print(f"\n[dim {col}]  Watching : {log_path}  —  Ctrl+C pour arrêter[/dim {col}]\n")
 
     try:
-        # Corrige : `f.readlines()[-n:]` chargeait le fichier ENTIER en RAM.
+        # tail_lines() remonte depuis la fin : `f.readlines()[-n:]`
+        # chargerait le fichier ENTIER en RAM.
         # Sur un /var/log/syslog de plusieurs Go, l'outil se faisait tuer par
         # l'OOM killer. tail_lines() remonte depuis la fin du fichier.
         for line in tail_lines(log_path, n_lines):
@@ -2828,9 +2771,9 @@ def services_manager():
     console.print()
     action_svc = console.input(f"[{col}]  Nom de service à inspecter [dim](vide = ignorer)[/dim] ❯ [/{col}]").strip()
     if action_svc:
-        # Corrige : le nom etait passe tel quel a systemctl/sc.exe. Un nom
-        # commencant par '-' devenait une OPTION de la commande (injection
-        # d'arguments) ; les caracteres exotiques cassaient l'affichage.
+        # Le nom part vers systemctl/sc.exe : un nom commencant par '-'
+        # deviendrait une OPTION de la commande (injection d'arguments), et
+        # les caracteres exotiques casseraient l'affichage.
         if not re.fullmatch(r"[A-Za-z0-9@._\-]{1,128}", action_svc) or action_svc.startswith("-"):
             error("Nom de service invalide.")
             return
@@ -2868,18 +2811,9 @@ def _looks_secret(value: str) -> bool:
 
 
 def env_inspector():
-    """Inspecteur de variables d'environnement.
-
-    Corrige deux fuites :
-      1. le masquage ne regardait QUE le nom de la variable — une variable
-         nommee `MY_CONFIG` contenant un jeton s'affichait en clair ;
-      2. le filtre cherchait aussi dans les valeurs, ce qui permettait de
-         confirmer le contenu d'une variable pourtant marquee comme masquee.
-    Les valeurs sont en plus echappees (une valeur contenant du balisage
-    Rich pouvait corrompre le tableau).
-    """
     col = th()["primary"]
-    sensitive_notice("variables d'environnement, parfois des secrets")
+    if not sensitive_notice("variables d'environnement, parfois des secrets"):
+        return
     SENSITIVE = {"password","passwd","secret","token","key","api_key","apikey","auth","credential","private","cert","ssl","pass","pwd","session","cookie","signature"}
     filtr = console.input(f"[{col}]  Filtre [dim](sur le NOM, vide = tout afficher)[/dim] ❯ [/{col}]").strip().lower()
     t_ui = themed_table(border_style=col)
@@ -2888,8 +2822,8 @@ def env_inspector():
 
     count = masked = 0
     for key, val in sorted(os.environ.items()):
-        # Le filtre ne porte plus que sur le nom : chercher par valeur
-        # revenait a un oracle sur des variables censees etre masquees.
+        # Filtre sur le nom uniquement : chercher par valeur serait un
+        # oracle sur des variables censees etre masquees.
         if filtr and filtr not in key.lower():
             continue
         is_sensitive = any(s in key.lower() for s in SENSITIVE) or _looks_secret(val)
@@ -2906,7 +2840,8 @@ def env_inspector():
 
 def arp_table():
     col = th()["primary"]
-    sensitive_notice("adresses IP/MAC du réseau local")
+    if not sensitive_notice("adresses IP/MAC du réseau local"):
+        return
     t_ui = themed_table(border_style=col)
     t_ui.add_column("IP",        style=col, width=20)
     t_ui.add_column("MAC",       style="bold white", width=22)
@@ -2961,7 +2896,8 @@ def arp_table():
 
 def net_connections():
     col = th()["primary"]
-    sensitive_notice("connexions réseau actives")
+    if not sensitive_notice("connexions réseau actives"):
+        return
     t_ui = themed_table(border_style=col)
     t_ui.add_column("Proto",     style=col, width=8)
     t_ui.add_column("Local",     style="white", width=24)
@@ -2982,13 +2918,6 @@ def net_connections():
             return
 
     def fmt_addr(addr):
-        """Corrige : `c.laddr.ip` plantait sur les sockets UNIX.
-
-        Avec kind="all", psutil renvoie une simple CHAINE (le chemin du socket)
-        pour les sockets UNIX, pas un namedtuple. Des qu'un socket UNIX etait
-        present — c'est-a-dire toujours sous Linux — le module levait
-        AttributeError et, avant le correctif de main(), tuait tout l'outil.
-        """
         if not addr:
             return "—"
         if isinstance(addr, str):
@@ -3039,7 +2968,6 @@ def file_hasher():
     t_ui.add_column("Hash", style="bold white", width=70)
     for name, h in algos.items(): t_ui.add_row(name, h.hexdigest())
     t_ui.add_row("─" * 10, "─" * 68)
-    # Corrige : `size` et `start` etaient calcules puis jamais affiches.
     t_ui.add_row("Taille", f"{size:,} octets ({size / 1e6:.2f} Mo)".replace(",", " "))
     t_ui.add_row("Duree", f"{duration:.2f} s"
                           + (f"  ({size / duration / 1e6:.1f} Mo/s)" if duration > 0.01 else ""))
@@ -3106,9 +3034,8 @@ def subnet_calc():
 def mac_lookup():
     col = th()["primary"]
     mac = console.input(f"[{col}]  Adresse MAC ❯ [/{col}]").strip()
-    # Corrige : n'importe quelle chaine partait vers l'API (fuite de donnee
-    # arbitraire vers un tiers), et la reponse etait lue sans plafond puis
-    # affichee comme du balisage Rich.
+    # Format valide avant tout envoi : sans ca, n'importe quelle chaine
+    # saisie partirait vers l'API d'un tiers.
     if not re.fullmatch(r"[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){2,5}", mac):
         error("Format MAC invalide (attendu : AA:BB:CC ou AA:BB:CC:DD:EE:FF).")
         return
@@ -3668,8 +3595,7 @@ def random_generator():
             for _ in range(3):
                 t_ui.add_row("UUID v4", str(uuid.uuid4()))
         elif op == "2":
-            # Corrige : `random` (Mersenne Twister) servait a generer des
-            # chaines utilisees comme jetons. Remplace par `secrets`.
+            # `secrets` et non `random` : ces chaines servent de jetons.
             length = ask_int(col, "Longueur", 16, 1, 512)
             t_ui.add_row("Lettres+Chiffres", ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(length)))
             t_ui.add_row("Lettres+Speciaux", ''.join(secrets.choice(string.ascii_letters + string.digits + string.punctuation) for _ in range(length)))
@@ -3723,14 +3649,13 @@ def diff_checker():
     console.print(t_ui)
 
 # ═══════════════════════════════════════════════════════
-#  v1.4.0 — CAPTURE ET EXPORT DES RESULTATS
+#  CAPTURE ET EXPORT DES RESULTATS
 # ═══════════════════════════════════════════════════════
 
 LAST_RESULT = {"title": None, "columns": [], "rows": [], "at": None}
 
 
 def _plain(cell):
-    """Rend une cellule en texte brut, balisage Rich retire."""
     try:
         if isinstance(cell, Text):
             return cell.plain
@@ -3740,8 +3665,6 @@ def _plain(cell):
 
 
 class RecordingTable(Table):
-    """Table qui memorise ce qu'elle affiche, pour l'export (module 54)."""
-
     def add_column(self, header="", *args, **kwargs):
         LAST_RESULT["columns"].append(_plain(header))
         return super().add_column(header, *args, **kwargs)
@@ -3753,17 +3676,11 @@ class RecordingTable(Table):
 
 
 def _export_rows():
-    """Lignes exportables, separateurs visuels ecartes."""
     return [r for r in LAST_RESULT["rows"]
             if not all(set(c.strip()) <= set("-─ ") for c in r if c)]
 
 
 def export_last_result():
-    """Exporte le dernier tableau affiche en JSON, CSV ou HTML.
-
-    Fonctionne avec n'importe quel module : chaque tableau construit par
-    themed_table() enregistre ses colonnes et ses lignes au passage.
-    """
     col = th()["cat_adv"]
     rows = _export_rows()
     if not rows:
@@ -3796,7 +3713,6 @@ def export_last_result():
 
 
 def write_export(path, ext, title, cols, rows):
-    """Ecrit un jeu de donnees tabulaire au format demande."""
     if ext == "json":
         payload = {
             "tool": TOOL_NAME,
@@ -3844,7 +3760,7 @@ def write_export(path, ext, title, cols, rows):
 
 
 # ═══════════════════════════════════════════════════════
-#  v1.4.0 — PREFERENCES ET FAVORIS
+#  PREFERENCES ET FAVORIS
 # ═══════════════════════════════════════════════════════
 
 def _load_prefs():
@@ -3861,15 +3777,11 @@ def _save_prefs():
         "theme": THEME_NAMES[CURRENT_THEME_IDX],
         "lang": LANG,
         "favorites": sorted(FAVORITES),
+        "konami": KONAMI_UNLOCKED,
     })
 
 
 def preferences_menu():
-    """Preferences et favoris.
-
-    Avant la v1.4.0, le theme et la langue etaient perdus a chaque fermeture :
-    il fallait les re-selectionner a chaque lancement.
-    """
     global CURRENT_THEME_IDX, LANG
     col = th()["cat_adv"]
 
@@ -3880,6 +3792,8 @@ def preferences_menu():
     t_ui.add_row("Langue", "Francais" if LANG == "fr" else "English")
     t_ui.add_row("Pseudo", DISPLAY_NAME)
     t_ui.add_row("Favoris", ", ".join(sorted(FAVORITES)) if FAVORITES else "aucun")
+    if KONAMI_UNLOCKED:
+        t_ui.add_row("Secret", "[bold bright_magenta]★ debloque[/bold bright_magenta]")
     t_ui.add_row("Fichier", PREFS_PATH)
     console.print(t_ui)
 
@@ -3890,11 +3804,14 @@ def preferences_menu():
 
     if op == "1":
         console.print()
-        for i, key in enumerate(THEME_NAMES, 1):
-            marker = "●" if i - 1 == CURRENT_THEME_IDX else "○"
+        names = visible_theme_names()
+        current = THEME_NAMES[CURRENT_THEME_IDX]
+        for i, key in enumerate(names, 1):
+            marker = "●" if key == current else "○"
             console.print(f"  [dim]{i}[/dim] {marker} {THEMES[key]['name']}")
-        pick = ask_int(col, "Theme", CURRENT_THEME_IDX + 1, 1, len(THEME_NAMES))
-        CURRENT_THEME_IDX = pick - 1
+        default = (names.index(current) + 1) if current in names else 1
+        pick = ask_int(col, "Theme", default, 1, len(names))
+        CURRENT_THEME_IDX = THEME_NAMES.index(names[pick - 1])
         success(f"Theme : [bold]{th()['name']}[/bold]")
 
     elif op in ("2", "3"):
@@ -3931,7 +3848,6 @@ def preferences_menu():
 
 
 def find_module(query):
-    """Cherche un module par son libelle. Retourne [(code, libelle), ...]."""
     q = query.strip().lower()
     if not q:
         return []
@@ -3944,7 +3860,7 @@ def find_module(query):
 
 
 # ═══════════════════════════════════════════════════════
-#  v1.4.0 — FICHIERS ET DONNEES
+#  FICHIERS ET DONNEES
 # ═══════════════════════════════════════════════════════
 
 def _ask_dir(col, label="Repertoire", default="."):
@@ -3957,7 +3873,6 @@ def _ask_dir(col, label="Repertoire", default="."):
 
 
 def _walk_files(root, max_files=200000):
-    """Parcours sans suivre les liens symboliques, plafonne en nombre."""
     seen = 0
     for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
         dirnames[:] = [d for d in dirnames
@@ -3981,7 +3896,6 @@ def _human(size):
 
 
 def disk_usage_tree():
-    """Repartition de l'espace disque par sous-repertoire."""
     col = th()["cat_sys"]
     root = _ask_dir(col, "Repertoire a analyser", os.path.expanduser("~"))
     if not root:
@@ -4019,7 +3933,6 @@ def disk_usage_tree():
 
 
 def big_files():
-    """Les plus gros fichiers d'une arborescence."""
     col = th()["cat_uti"]
     root = _ask_dir(col, "Repertoire a analyser", os.path.expanduser("~"))
     if not root:
@@ -4060,12 +3973,6 @@ def big_files():
 
 
 def duplicate_finder():
-    """Detecte les fichiers en double par empreinte SHA-256.
-
-    Compare d'abord les tailles (aucune lecture), puis un prefixe de 4 Ko,
-    et seulement ensuite le contenu complet : sur une grosse arborescence,
-    cela evite de hacher la quasi-totalite des fichiers.
-    """
     col = th()["cat_uti"]
     root = _ask_dir(col, "Repertoire a analyser", ".")
     if not root:
@@ -4141,7 +4048,6 @@ def duplicate_finder():
 
 
 def data_converter():
-    """Formatage, validation et conversion JSON / CSV / YAML."""
     col = th()["cat_uti"]
     console.print(f"\n  [{col}]Donnees structurees :[/{col}]")
     console.print("  [dim]1[/dim] Formater / valider du JSON   [dim]2[/dim] Compacter du JSON")
@@ -4242,7 +4148,6 @@ def data_converter():
 
 
 def regex_tester():
-    """Testeur d'expressions regulieres, avec garde-fou anti-blocage."""
     col = th()["cat_uti"]
     pattern = console.input(f"[{col}]  Expression ❯ [/{col}]")
     if not pattern:
@@ -4340,7 +4245,6 @@ def _describe_cron_field(spec, name, lo, hi):
 
 
 def cron_explainer():
-    """Traduit une expression cron en francais et signale les erreurs."""
     col = th()["cat_uti"]
     console.print("\n  [dim]Exemples : «0 3 * * 1»  «*/15 * * * *»  «@daily»[/dim]")
     expr = console.input(f"[{col}]  Expression cron ❯ [/{col}]").strip()
@@ -4378,11 +4282,10 @@ def cron_explainer():
 
 
 # ═══════════════════════════════════════════════════════
-#  v1.4.0 — SECURITE ET RESEAU
+#  SECURITE ET RESEAU
 # ═══════════════════════════════════════════════════════
 
 def tls_inspector():
-    """Inspecte le certificat TLS d'un hote : validite, chaine, protocole."""
     import ssl
     col = th()["cat_net"]
     host = ask_host(col, "Domaine", "github.com")
@@ -4476,7 +4379,6 @@ LEAKY_HEADERS = ("server", "x-powered-by", "x-aspnet-version", "x-generator")
 
 
 def http_headers_audit():
-    """Analyse les en-tetes de securite d'un site."""
     col = th()["cat_net"]
     host = ask_host(col, "Domaine", "github.com")
     if not host:
@@ -4555,7 +4457,6 @@ DOH_RESOLVERS = (
 
 
 def _doh_query(name, rtype, timeout=6):
-    """Interroge les resolveurs DoH dans l'ordre, renvoie (donnees, resolveur)."""
     headers = {"User-Agent": f"{TOOL_NAME}/{VERSION}",
                "Accept": "application/dns-json"}
     last = None
@@ -4570,7 +4471,6 @@ def _doh_query(name, rtype, timeout=6):
 
 
 def dns_records():
-    """Enregistrements DNS via DNS-over-HTTPS (aucune dependance supplementaire)."""
     col = th()["cat_net"]
     host = ask_host(col, "Domaine", "github.com")
     if not host:
@@ -4638,7 +4538,6 @@ def dns_records():
 
 
 def jwt_decoder():
-    """Decode un JWT et signale ce qui cloche. Ne verifie PAS la signature."""
     col = th()["cat_uti"]
     warn("Ce module DECODE le jeton, il ne verifie pas sa signature.")
     info("Un JWT est lisible par quiconque : ne colle jamais un jeton de production encore valide.")
@@ -4703,11 +4602,500 @@ def jwt_decoder():
     for note in notes:
         info(note)
 
+# ═══════════════════════════════════════════════════════
+#  BATTERIE / ALIMENTATION
+# ═══════════════════════════════════════════════════════
+
+def battery_info():
+    col = th()["cat_sys"]
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("", style=col, width=22)
+    t_ui.add_column("", style="white", width=48)
+
+    batt = None
+    try:
+        batt = psutil.sensors_battery()
+    except Exception:
+        pass
+
+    if batt is None:
+        t_ui.add_row("Batterie", "[dim]aucune detectee (poste fixe ?)[/dim]")
+    else:
+        pct = batt.percent
+        t_ui.add_row("Charge", f"{pct_bar(pct)} [bold]{pct:.0f}%[/bold]")
+        t_ui.add_row("Alimentation",
+                     "[green]secteur branche[/green]" if batt.power_plugged
+                     else "[yellow]sur batterie[/yellow]")
+        secs = batt.secsleft
+        if batt.power_plugged or secs == getattr(psutil, "POWER_TIME_UNLIMITED", -2):
+            t_ui.add_row("Autonomie", "[dim]—[/dim]")
+        elif secs is None or secs < 0:
+            t_ui.add_row("Autonomie", "[dim]inconnue[/dim]")
+        else:
+            h, m = divmod(int(secs) // 60, 60)
+            t_ui.add_row("Autonomie", f"[bold]{h}h {m:02d}m[/bold]")
+        if pct < 20 and not batt.power_plugged:
+            t_ui.add_row("Alerte", "[bold red]batterie faible — branche-toi[/bold red]")
+
+    for label, fn in (("Temperatures", "sensors_temperatures"), ("Ventilateurs", "sensors_fans")):
+        getter = getattr(psutil, fn, None)
+        if not getter:
+            continue
+        try:
+            data = getter() or {}
+        except Exception:
+            continue
+        if not data:
+            continue
+        t_ui.add_row("─" * 20, "─" * 46)
+        for name, entries in list(data.items())[:4]:
+            for entry in entries[:2]:
+                value = getattr(entry, "current", None)
+                if value is None:
+                    continue
+                unit = "°C" if fn == "sensors_temperatures" else " RPM"
+                t_ui.add_row(f"  {esc((entry.label or name)[:18])}", f"{value:.0f}{unit}")
+    console.print(t_ui)
+
+
+# ═══════════════════════════════════════════════════════
+#  PASSPHRASE MEMORISABLE
+# ═══════════════════════════════════════════════════════
+
+PASSPHRASE_WORDS = (
+    "arbre avion balcon banane barque bateau berger bijou biscuit blanc bleu bocal "
+    "bonbon botte bougie boulon bouton branche brique brosse bulle bureau cactus cadeau "
+    "cahier caillou canard canon carotte carte casque castor cerise chaise chapeau charbon "
+    "chateau chemin cheval chevre chiffre cible ciseau citron clavier cloche clou cobra "
+    "coffre colline colonne comete confit corde coton coude coupe courge crabe craie "
+    "crayon cresson crible cuivre cygne dauphin dessin diamant domino dragon drapeau ecran "
+    "ecureuil eponge epaule epice escalier etoile falaise farine fenetre ferme feuille "
+    "figue filet flamme fleche fleur flocon foret fourmi fraise frere fromage fusee galet "
+    "gant garage gateau girafe glacier gomme gorille goutte grange grelot grotte guitare "
+    "hameau harpe hibou horloge huitre igloo image jardin jaune jeton jongleur jument "
+    "kayak lampe lanterne lapin lavande lezard licorne lierre limace lingot lionne loupe "
+    "lucarne lumiere lutin machine magie maison marbre marin marteau masque melon menthe "
+    "meuble miel miroir moineau montagne moulin mouton muguet mursaut navire nectar neige "
+    "niche nuage ocean ombre orage orange orchidee ortie oursin outil palais panda panier "
+    "papier parasol pastel patin peigne pelouse perle phare piano pierre pigeon pilote "
+    "pinceau pirate piste plage planche plume poivre pomme pont portail poterie poulain "
+    "prairie prisme prune puzzle pyramide quartz radeau raisin rameau rapide renard requin "
+    "rideau rivage rocher rosier rubis ruche sabot safran sapin sardine sauge savon scarabee "
+    "sculpture semelle sentier serpent silex sirene soleil sommet sorbet source souris "
+    "sucre table tambour tapis taupe temple tigre tissu toile tomate torche tortue toupie "
+    "tournesol trefle tresor tribu tulipe tunnel vague vallee vanille velours verger vernis "
+    "violon voile volcan yaourt zebre zenith"
+).split()
+
+
+def passphrase_gen():
+    import math
+    col = th()["cat_uti"]
+    if not sensitive_notice("phrases de passe générées en clair"):
+        return
+    words = ask_int(col, "Nombre de mots", 8, 3, 16)
+    sep_raw = console.input(f"[{col}]  Separateur [dim](default: -)[/dim] ❯ [/{col}]").strip()
+    sep = sep_raw[:3] or "-"
+
+    pool = len(PASSPHRASE_WORDS)
+    entropy = words * math.log2(pool)
+
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("#", style=f"dim {col}", width=4)
+    t_ui.add_column("Phrase de passe", style="bold white", width=56)
+    t_ui.add_column("Longueur", style="dim", width=12)
+
+    for i in range(5):
+        picked = [secrets.choice(PASSPHRASE_WORDS) for _ in range(words)]
+        # Un mot capitalise et un chiffre : accepte par la plupart des politiques
+        # de mot de passe, sans nuire a la memorisation.
+        idx = secrets.randbelow(words)
+        picked[idx] = picked[idx].capitalize()
+        phrase = sep.join(picked) + sep + str(secrets.randbelow(100))
+        t_ui.add_row(str(i + 1), phrase, f"{len(phrase)} car.")
+    console.print(t_ui)
+
+    info(f"Tire dans {pool} mots avec `secrets` — entropie ~{entropy:.0f} bits "
+         f"(hors capitale et chiffre ajoutes).")
+    crack = (2 ** entropy) / 1e10 / 2
+    info(f"Temps de cassage estime hors ligne (10^10 tentatives/s) : {_human_duration(crack)}")
+
+    if entropy < 50:
+        error(f"Entropie faible ({entropy:.0f} bits) — ajoute des mots "
+              f"(8 minimum recommande avec cette liste).")
+    elif entropy < 70:
+        warn(f"Entropie moyenne ({entropy:.0f} bits) — convient a un usage courant, "
+             f"pas a un secret critique.")
+    else:
+        success(f"Entropie solide ({entropy:.0f} bits).")
+
+
+# ═══════════════════════════════════════════════════════
+#  INTEGRITE DES FICHIERS
+# ═══════════════════════════════════════════════════════
+
+INTEGRITY_MAX_FILES = 20000
+INTEGRITY_MAX_FILE_BYTES = 100 * 1024 * 1024
+
+
+def _baseline_path(root):
+    slug = hashlib.sha256(os.path.abspath(root).encode("utf-8")).hexdigest()[:16]
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        f".{TOOL_NAME}_baseline_{slug}.json")
+
+
+def _hash_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(262144)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _scan_integrity(root):
+    snapshot, skipped = {}, 0
+    for path in _walk_files(root, max_files=INTEGRITY_MAX_FILES):
+        try:
+            size = os.lstat(path).st_size
+            if size > INTEGRITY_MAX_FILE_BYTES:
+                skipped += 1
+                continue
+            snapshot[os.path.relpath(path, root)] = {
+                "sha256": _hash_file(path),
+                "size": size,
+            }
+        except (OSError, PermissionError):
+            skipped += 1
+    return snapshot, skipped
+
+
+def file_integrity():
+    col = th()["cat_sys"]
+    root = _ask_dir(col, "Repertoire a surveiller", ".")
+    if not root:
+        return
+    store = _baseline_path(root)
+    has_baseline = os.path.exists(store)
+
+    console.print()
+    console.print(f"  [dim]1[/dim] Enregistrer l'empreinte de reference"
+                  f"{'  [dim](ecrase l existante)[/dim]' if has_baseline else ''}")
+    console.print(f"  [dim]2[/dim] Comparer avec l'empreinte de reference"
+                  f"{'' if has_baseline else '  [dim](aucune enregistree)[/dim]'}")
+    op = console.input(f"\n[{col}]  Choix ❯ [/{col}]").strip()
+
+    if op == "1":
+        console.print(f"\n[dim {col}]  Analyse de {esc(root)}...[/dim {col}]")
+        snapshot, skipped = _scan_integrity(root)
+        if not snapshot:
+            error("Aucun fichier lisible dans ce repertoire.")
+            return
+        ok = write_private_json(store, {
+            "root": os.path.abspath(root),
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "files": snapshot,
+        })
+        if not ok:
+            error("Ecriture de l'empreinte impossible.")
+            return
+        success(f"Empreinte enregistree : {len(snapshot)} fichier(s).")
+        if skipped:
+            warn(f"{skipped} fichier(s) ignore(s) (illisibles ou > 100 Mo).")
+        info(f"Fichier : {os.path.basename(store)}")
+        return
+
+    if op != "2":
+        return
+    if not has_baseline:
+        error("Aucune empreinte de reference — lance d'abord l'option 1.")
+        return
+
+    try:
+        with open(store, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        old = data.get("files") or {}
+    except Exception as e:
+        error(f"Empreinte illisible : {esc(e)}")
+        return
+
+    console.print(f"\n[dim {col}]  Comparaison de {esc(root)}...[/dim {col}]")
+    new, skipped = _scan_integrity(root)
+
+    added    = sorted(set(new) - set(old))
+    removed  = sorted(set(old) - set(new))
+    modified = sorted(p for p in set(old) & set(new)
+                      if old[p].get("sha256") != new[p]["sha256"])
+
+    LAST_RESULT["title"] = f"Integrite — {os.path.basename(root) or root}"
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Etat", width=14)
+    t_ui.add_column("Fichier", style="white", width=54)
+    t_ui.add_column("Taille", style="dim", width=12)
+
+    for path in modified[:60]:
+        t_ui.add_row("[bold red]MODIFIE[/bold red]", esc(path[:54]), _human(new[path]["size"]))
+    for path in added[:60]:
+        t_ui.add_row("[yellow]AJOUTE[/yellow]", esc(path[:54]), _human(new[path]["size"]))
+    for path in removed[:60]:
+        t_ui.add_row("[bright_black]SUPPRIME[/bright_black]", esc(path[:54]),
+                     _human(old[path].get("size", 0)))
+    if not (modified or added or removed):
+        t_ui.add_row("[green]INTACT[/green]", "aucun changement detecte", "—")
+    console.print(t_ui)
+
+    info(f"Reference du {esc(data.get('created_at', '?'))} — {len(old)} fichier(s).")
+    console.print(f"  [bold red]{len(modified)} modifie(s)[/bold red]   "
+                  f"[yellow]{len(added)} ajoute(s)[/yellow]   "
+                  f"[bright_black]{len(removed)} supprime(s)[/bright_black]")
+    if skipped:
+        warn(f"{skipped} fichier(s) ignore(s) (illisibles ou > 100 Mo).")
+
+
+# ═══════════════════════════════════════════════════════
+#  BENCHMARK RAPIDE
+# ═══════════════════════════════════════════════════════
+
+def benchmark():
+    col = th()["cat_sys"]
+    info("Test court (~6 s). Ferme les applications lourdes pour un resultat fiable.")
+    console.print()
+
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Test", style=col, width=20)
+    t_ui.add_column("Resultat", style="bold white", width=24)
+    t_ui.add_column("Detail", style="dim", width=34)
+
+    # CPU : hachage en boucle pendant une duree fixe.
+    block = secrets.token_bytes(65536)
+    rounds, start, deadline = 0, time.perf_counter(), time.perf_counter() + 2.0
+    while time.perf_counter() < deadline:
+        hashlib.sha256(block).digest()
+        rounds += 1
+    cpu_elapsed = time.perf_counter() - start
+    cpu_mbs = rounds * len(block) / cpu_elapsed / 1e6
+    t_ui.add_row("CPU (SHA-256)", f"{cpu_mbs:.0f} Mo/s", f"{rounds} blocs de 64 Ko en {cpu_elapsed:.1f}s")
+
+    # Memoire : copie de tampon.
+    buf = bytearray(32 * 1024 * 1024)
+    start = time.perf_counter()
+    copies = 0
+    while time.perf_counter() - start < 1.5:
+        buf[:] = buf
+        copies += 1
+    mem_elapsed = time.perf_counter() - start
+    mem_mbs = copies * len(buf) / mem_elapsed / 1e6
+    t_ui.add_row("Memoire (copie)", f"{mem_mbs:.0f} Mo/s", f"{copies} copies de 32 Mo")
+    del buf
+
+    # Disque : ecriture puis lecture d'un fichier temporaire.
+    payload = secrets.token_bytes(1024 * 1024) * 32   # 32 Mo
+    tmp_path = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(prefix=f"{TOOL_NAME}_bench_")
+        start = time.perf_counter()
+        with os.fdopen(fd, "wb") as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        write_s = time.perf_counter() - start
+        start = time.perf_counter()
+        with open(tmp_path, "rb") as f:
+            while f.read(1024 * 1024):
+                pass
+        read_s = time.perf_counter() - start
+        t_ui.add_row("Disque (ecriture)", f"{len(payload) / write_s / 1e6:.0f} Mo/s",
+                     f"32 Mo en {write_s:.2f}s (avec fsync)")
+        t_ui.add_row("Disque (lecture)", f"{len(payload) / read_s / 1e6:.0f} Mo/s",
+                     f"32 Mo en {read_s:.2f}s (cache possible)")
+    except OSError as e:
+        t_ui.add_row("Disque", "[red]echec[/red]", esc(str(e)[:34]))
+    finally:
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+    t_ui.add_row("─" * 18, "─" * 22, "─" * 32)
+    t_ui.add_row("Machine", esc(platform.node()),
+                 f"{psutil.cpu_count(logical=True)} threads")
+    console.print(t_ui)
+
+
+# ═══════════════════════════════════════════════════════
+#  PORTS EN ECOUTE
+# ═══════════════════════════════════════════════════════
+
+RISKY_LISTEN_PORTS = {
+    21: "FTP (clair)", 23: "Telnet (clair)", 445: "SMB", 3389: "RDP",
+    5900: "VNC", 3306: "MySQL", 5432: "PostgreSQL", 27017: "MongoDB",
+    6379: "Redis", 9200: "Elasticsearch", 11211: "Memcached",
+}
+
+
+def listening_ports():
+    col = th()["cat_net"]
+    if not sensitive_notice("services en écoute sur cette machine"):
+        return
+    try:
+        conns = psutil.net_connections(kind="inet")
+    except (psutil.AccessDenied, PermissionError):
+        error("Droits insuffisants — relance en root/administrateur.")
+        return
+
+    listening = [c for c in conns if c.status == psutil.CONN_LISTEN]
+    if not listening:
+        info("Aucun service en ecoute detecte.")
+        return
+
+    LAST_RESULT["title"] = "Ports en ecoute"
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Proto", style=col, width=8)
+    t_ui.add_column("Adresse", style="white", width=26)
+    t_ui.add_column("Port", style="bold white", width=8)
+    t_ui.add_column("Processus", style="dim", width=22)
+    t_ui.add_column("Exposition", width=26)
+
+    exposed = 0
+    seen = set()
+    for c in sorted(listening, key=lambda c: (getattr(c.laddr, "port", 0))):
+        ip   = getattr(c.laddr, "ip", "?")
+        port = getattr(c.laddr, "port", 0)
+        key  = (ip, port, c.pid)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        name = "?"
+        if c.pid:
+            try:
+                name = psutil.Process(c.pid).name()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        public = ip in ("0.0.0.0", "::", "")
+        if public:
+            exposed += 1
+            risk = RISKY_LISTEN_PORTS.get(port)
+            note = (f"[bold red]toutes interfaces — {risk}[/bold red]" if risk
+                    else "[yellow]toutes interfaces[/yellow]")
+        else:
+            note = "[green]local uniquement[/green]"
+
+        proto = "TCP" if c.type == socket.SOCK_STREAM else "UDP"
+        t_ui.add_row(proto, esc(str(ip)), str(port),
+                     esc(f"{name}({c.pid})" if c.pid else name), note)
+    console.print(t_ui)
+
+    info(f"{len(seen)} service(s) en ecoute, dont {exposed} accessible(s) depuis le reseau.")
+    if exposed:
+        warn("Un service en ecoute sur 0.0.0.0 est joignable par toute machine du reseau.")
+
+
+# ═══════════════════════════════════════════════════════
+#  SECRET
+# ═══════════════════════════════════════════════════════
+
+def _konami_animation():
+    if not sys.stdin.isatty():
+        return
+    symbols = ["▲", "▲", "▼", "▼", "◄", "►", "◄", "►", "B", "A"]
+    colors  = ["bright_magenta", "bright_yellow", "bright_cyan", "bright_green"]
+    try:
+        with Live(Text(""), console=console, refresh_per_second=30, transient=True) as live:
+            for step in range(len(symbols) + 3):
+                line = Text()
+                for i, sym in enumerate(symbols):
+                    if i < step:
+                        line.append(f" {sym} ", style=f"bold {colors[i % len(colors)]}")
+                    else:
+                        line.append(f" {sym} ", style="bright_black")
+                live.update(Align.center(line))
+                time.sleep(0.07)
+    except Exception:
+        pass
+
+
+def konami_unlock():
+    global KONAMI_UNLOCKED, CURRENT_THEME_IDX
+    already = KONAMI_UNLOCKED
+    _konami_animation()
+
+    body = Text()
+    body.append("↑ ↑ ↓ ↓ ← → ← → B A\n\n", style="bold bright_yellow")
+    if already:
+        body.append("Secret déjà débloqué.\n", style="bright_white")
+        body.append("Thème Arcade ★ et module 99 disponibles.", style="bright_cyan")
+    else:
+        body.append("SECRET DÉBLOQUÉ\n", style="bold bright_green")
+        body.append("Thème  ", style="bright_white")
+        body.append("Arcade ★", style="bold bright_magenta")
+        body.append("  ·  Module  ", style="bright_white")
+        body.append("99 Mode Arcade", style="bold bright_cyan")
+    console.print(Align.center(Panel(
+        body, border_style="bright_magenta", box=box.DOUBLE_EDGE,
+        padding=(1, 6), title="[bold bright_yellow]★ KONAMI ★[/bold bright_yellow]",
+    )))
+
+    if not already:
+        KONAMI_UNLOCKED = True
+        CURRENT_THEME_IDX = THEME_NAMES.index("arcade")
+        if _save_prefs():
+            info("Débloqué définitivement — repris au prochain lancement.")
+        else:
+            warn("Déblocage actif pour cette session (sauvegarde impossible).")
+        info("Thème Arcade appliqué — module 27 pour en changer.")
+
+
+def arcade_mode():
+    col = "bright_magenta"
+    logo = None
+    for font in ("small", "mini", "standard"):
+        try:
+            candidate = pyfiglet.figlet_format("ARCADE", font=font, width=_screen_width())
+        except Exception:
+            continue
+        logo = candidate
+        break
+    if logo:
+        palette = ["bright_magenta", "bright_yellow", "bright_cyan", "bright_green"]
+        for i, line in enumerate(logo.rstrip().splitlines()):
+            console.print(Align.center(Text(line, style=f"bold {palette[i % len(palette)]}")))
+    console.print()
+
+    boot = datetime.fromtimestamp(psutil.boot_time())
+    up_h = (datetime.now() - boot).total_seconds() / 3600
+    vm = psutil.virtual_memory()
+    procs = len(psutil.pids())
+    modules = sum(1 for _, _, items in get_cats() for code, _ in items if code != "00")
+    score = int(up_h * 100 + procs * 7 + (100 - vm.percent) * 13)
+
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("", style=col, width=20)
+    t_ui.add_column("", style="bold white", width=44)
+    t_ui.add_row("PLAYER", esc(DISPLAY_NAME))
+    t_ui.add_row("MACHINE", esc(f"{getpass.getuser()}@{platform.node()}"))
+    t_ui.add_row("HIGH SCORE", f"[bold bright_yellow]{score:,}[/bold bright_yellow]".replace(",", " "))
+    t_ui.add_row("STAGE", f"{up_h:.1f} h d'uptime")
+    t_ui.add_row("MODULES", f"{modules} debloques")
+    t_ui.add_row("FAVORIS", str(len(FAVORITES)))
+    t_ui.add_row("THEME", th()["name"])
+    t_ui.add_row("CREDITS", f"{TOOL_NAME} {VERSION}")
+    console.print(t_ui)
+    console.print()
+    console.print(Align.center(Text("★  INSERT COIN  ★", style="bold bright_yellow")))
+
+
 # ── Application des preferences enregistrees ─────────────
-# v1.4.0 : theme, langue et favoris etaient perdus a chaque fermeture.
 _PREFS = _load_prefs()
+KONAMI_UNLOCKED = bool(_PREFS.get("konami"))
 if _PREFS.get("theme") in THEME_NAMES:
-    CURRENT_THEME_IDX = THEME_NAMES.index(_PREFS["theme"])
+    # Un theme secret enregistre ne se recharge que s'il est encore debloque.
+    if _PREFS["theme"] not in HIDDEN_THEMES or KONAMI_UNLOCKED:
+        CURRENT_THEME_IDX = THEME_NAMES.index(_PREFS["theme"])
 if _PREFS.get("lang") in ("fr", "en"):
     LANG = _PREFS["lang"]
 FAVORITES.update(str(c).zfill(2) for c in (_PREFS.get("favorites") or [])[:12])
@@ -4770,7 +5158,6 @@ ACTIONS = {
     "45": url_html_tools,
     "46": random_generator,
     "47": diff_checker,
-    # ────────────── v1.4.0 ──────────────
     "48": disk_usage_tree,
     "49": big_files,
     "50": duplicate_finder,
@@ -4783,19 +5170,18 @@ ACTIONS = {
     "57": dns_records,
     "58": jwt_decoder,
     "59": preferences_menu,
+    "60": battery_info,
+    "61": passphrase_gen,
+    "62": file_integrity,
+    "63": benchmark,
+    "64": listening_ports,
+    "99": arcade_mode,
 }
 
 # ═══════════════════════════════════════════════════════
 #  MAIN
 # ═══════════════════════════════════════════════════════
 def _run_action(fn, choice):
-    """Execute une fonctionnalite en isolant ses erreurs.
-
-    Corrige : `main()` appelait `fn()` sans aucune protection. La moindre
-    exception dans un module (fichier absent, droits refuses, reseau coupe,
-    balisage invalide...) faisait remonter une trace et TUAIT tout l'outil.
-    Un incident isole ne doit couter qu'un retour au menu.
-    """
     label, _ = _color_for(choice)
     LAST_RESULT["title"] = label if label != choice else fn.__name__
     try:
@@ -4838,8 +5224,15 @@ def main():
             console.print(f"\n{Align.center(f'[bold {bye_color}]{bye_msg}[/bold {bye_color}]')}\n")
             break
 
+        if choice == KONAMI_TRIGGER:
+            clr()
+            banner()
+            _run_action(konami_unlock, "99")
+            pause()
+            continue
+
         if choice.startswith("*") and choice[1:].strip():
-            # Raccourci v1.5.0 : *08 (dé)favorise le module 08 sans y entrer.
+            # *08 (dé)favorise le module 08 sans y entrer.
             raw_code = choice[1:].strip()
             code = raw_code.zfill(2) if raw_code.isdigit() else None
             if code is None:
@@ -4864,7 +5257,7 @@ def main():
 
         fn = ACTIONS.get(choice) or ACTIONS.get(choice.zfill(2))
         if fn is None and choice and not choice.isdigit():
-            # v1.4.0 : on peut taper un nom de module au lieu de son numero.
+            # On peut taper un nom de module au lieu de son numero.
             hits = find_module(choice)
             if len(hits) == 1:
                 choice, fn = hits[0][0], ACTIONS.get(hits[0][0])
@@ -4912,11 +5305,14 @@ def _parse_args():
     parser.add_argument("--version", action="version", version=f"{TOOL_NAME} {VERSION}")
     parser.add_argument("--no-update", action="store_true",
                         help="ne pas verifier les mises a jour au demarrage")
-    parser.add_argument("--theme", choices=sorted(THEMES.keys()),
+    parser.add_argument("--theme", choices=sorted(visible_theme_names()),
                         help="theme visuel a utiliser au demarrage")
     parser.add_argument("--lang", choices=("fr", "en"), help="langue de l'interface")
     parser.add_argument("--debug", action="store_true",
                         help="afficher les traces completes en cas d'erreur")
+    parser.add_argument("--ascii", action="store_true",
+                        help="remplacer les emoji par des equivalents lisibles "
+                             "dans toutes les consoles (console Windows classique)")
     parser.add_argument("--list", action="store_true",
                         help="lister les modules disponibles et quitter")
     parser.add_argument("--run", metavar="CODE",
@@ -4933,7 +5329,6 @@ def _parse_args():
 
 
 def list_modules():
-    """Liste des modules, pour la ligne de commande et les scripts."""
     for title, color, items in get_cats():
         console.print(f"\n  [bold {color}]{title}[/bold {color}]")
         for code, label in items:
@@ -4944,12 +5339,6 @@ def list_modules():
 
 
 def run_headless(args):
-    """Execute un module sans interface, pour scripter l'outil.
-
-    Les invites du module consomment --answer dans l'ordre ; une invite sans
-    reponse disponible recoit une chaine vide, ce qui declenche la valeur par
-    defaut prevue par le module.
-    """
     code = args.run.zfill(2)
     fn = ACTIONS.get(code) or ACTIONS.get(args.run)
     if not fn:
@@ -5013,6 +5402,8 @@ if __name__ == "__main__":
     global_args = _parse_args()
     if global_args.debug:
         DEBUG = True
+    if global_args.ascii:
+        ASCII_MODE = True
     if global_args.no_update:
         UPDATE_ENABLED = False
     if global_args.theme:
@@ -5036,8 +5427,8 @@ if __name__ == "__main__":
             try:
                 check_for_updates()
             except Exception as exc:
-                # Corrige : une erreur pendant la verification de mise a jour
-                # empechait purement et simplement l'outil de demarrer.
+                # Une erreur de verification ne doit jamais empecher
+                # l'outil de demarrer.
                 warn(f"Verification de mise a jour ignoree ({type(exc).__name__}).")
         main()
     except KeyboardInterrupt:

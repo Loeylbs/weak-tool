@@ -3,12 +3,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.8%2B-blue" alt="Python 3.8+">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey" alt="Plateformes">
-  <img src="https://img.shields.io/badge/version-1.5.0-brightgreen" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.6.0-brightgreen" alt="Version">
 </p>
 
 **weak-tool** (nom affiché par défaut : *weak-tool*, entièrement personnalisable) est un outil terminal tout-en-un pour l'administration système, le diagnostic réseau et le monitoring, écrit en Python avec une interface colorée grâce à [rich](https://github.com/Textualize/rich).
 
-**59 modules** répartis en 5 catégories, **9 thèmes visuels**, un menu filtrable en direct pendant la frappe, des favoris mis en avant, des contours de menu animés, un mode non-interactif pour scripter l'outil, l'export de n'importe quel résultat en JSON/CSV/HTML, des préférences persistantes, et une mise à jour automatique vérifiée.
+**64 modules** répartis en 5 catégories, **9 thèmes visuels** (+1 secret), un menu filtrable en direct pendant la frappe, des favoris mis en avant, des contours de menu animés, un mode non-interactif pour scripter l'outil, l'export de n'importe quel résultat en JSON/CSV/HTML, des préférences persistantes, et une mise à jour automatique vérifiée.
 
 ## 📋 Sommaire
 
@@ -17,6 +17,7 @@
 - [Prérequis](#prérequis)
 - [Installation](#installation)
 - [Utilisation](#utilisation)
+- [Windows 10](#windows-10)
 - [Personnalisation](#personnalisation)
 - [Mise à jour automatique](#mise-à-jour-automatique)
 - [Fichiers créés](#fichiers-créés)
@@ -32,7 +33,7 @@ Le menu principal garde les panneaux centrés, les contours changent de couleur 
 et taper un mot grise en direct tout ce qui ne correspond pas.
                          / WEAK-TOOL \
 
-      v1.5.0 · USER · toi@ton-pc · 14:32:07 · theme:Neon Board
+      v1.6.0 · USER · toi@ton-pc · 14:32:07 · theme:Neon Board
 
               ┌────────────────── ★ FAVORIS ──────────────────┐
               │ ★08 Test Ping   ★15 Générateur de Hash        │
@@ -66,6 +67,9 @@ et taper un mot grise en direct tout ce qui ne correspond pas.
 | 33 | Env Inspector |
 | 37 | Cron Inspector |
 | **41** | **Diskpart Simplifié** |
+| **60** | **Batterie / Alimentation** |
+| **62** | **Intégrité Fichiers** |
+| **63** | **Benchmark** |
 
 ### 🌐 RÉSEAU
 | # | Action |
@@ -85,6 +89,7 @@ et taper un mot grise en direct tout ce qui ne correspond pas.
 | **55** | **Inspecteur TLS** |
 | **56** | **En-têtes HTTP** |
 | **57** | **Enregistrements DNS** |
+| **64** | **Ports en Écoute** |
 
 ### 📊 MONITORING
 | # | Action |
@@ -113,6 +118,7 @@ et taper un mot grise en direct tout ce qui ne correspond pas.
 | **52** | **Testeur Regex** |
 | **53** | **Explicateur Cron** |
 | **58** | **Décodeur JWT** |
+| **61** | **Phrase de Passe** |
 
 ### 🔬 AVANCÉ
 | # | Action |
@@ -134,7 +140,7 @@ et taper un mot grise en direct tout ce qui ne correspond pas.
 ## Prérequis
 
 - Python **3.8 ou supérieur**
-- Windows, Linux ou macOS
+- Windows (10 et 11), Linux ou macOS
 - Une connexion internet au premier lancement (installation automatique des dépendances manquantes)
 
 Dépendances (installées automatiquement si absentes) :
@@ -169,6 +175,7 @@ Options en ligne de commande :
 | `--theme <nom>` | démarre sur un thème précis (`neon`, `matrix`, `dracula`…) |
 | `--lang fr\|en` | langue de l'interface |
 | `--debug` | trace complète en cas d'erreur (équivaut à `WEAK_TOOL_DEBUG=1`) |
+| `--ascii` | remplace les emoji par des équivalents lisibles partout (équivaut à `WEAK_TOOL_ASCII=1`) |
 | `--list` | liste tous les modules et quitte |
 | `--run CODE` | exécute un module puis quitte |
 | `--answer VALEUR` | réponse fournie aux invites du module (répétable) |
@@ -206,6 +213,31 @@ Codes de sortie : `0` succès, `1` échec du module, `2` erreur d'invocation.
 Tape le numéro de l'action souhaitée puis `Entrée` pour naviguer dans le menu. `00` permet de quitter à tout moment.
 
 > 💡 Certaines fonctionnalités (Firewall Rules, SSH Audit, Services Manager, Env Inspector, Diskpart Simplifié...) donnent des informations plus complètes ou nécessitent des droits administrateur.
+
+## Windows 10
+
+L'outil fonctionne sur Windows 10 comme sur Windows 11 : Python 3.8+ suffit, et toutes
+les commandes utilisées (`ping`, `tracert`, `arp`, `netsh`, `sc.exe`, `schtasks`,
+`diskpart`) sont présentes d'origine. Le module Diskpart Simplifié utilise `Get-Disk`
+(module Storage, livré depuis Windows 8) avec un repli `Get-CimInstance Win32_DiskDrive`
+— aucune dépendance à `wmic`, retiré des versions récentes de Windows.
+
+La seule différence est **cosmétique et vient de la console**, pas de l'outil :
+
+| Console | Rendu |
+|---|---|
+| **Windows Terminal** (par défaut sur Win11, [gratuit sur Win10](https://apps.microsoft.com/detail/9n0dx20hk701)) | tout s'affiche : emoji, dégradés, animations fluides |
+| **`cmd.exe` / PowerShell classique** (par défaut sur Win10) | les emoji n'ont pas de glyphe dans la police par défaut, l'animation du menu peut scintiller |
+
+Dans le second cas l'outil **bascule automatiquement** sur des symboles lisibles partout
+(`[!]` au lieu de 🔒, etc.). Rien ne plante et aucun texte n'est illisible : Python écrit
+en Unicode via l'API console de Windows, quel que soit le codepage.
+
+Pour forcer ce mode dans n'importe quelle console :
+
+```bash
+python weak-tool.py --ascii
+```
 
 ## Personnalisation
 
@@ -264,8 +296,6 @@ Ces fichiers sont écrits en `0600` (lisibles par le seul propriétaire).
 
 ## Sécurité
 
-La v1.4.0 corrige 20 problèmes relevés lors d'un audit complet du code (voir `AUDIT.md`), dont trois critiques : l'auto-update sans vérification d'intégrité, la génération de mots de passe par un PRNG non cryptographique, et la suppression sans confirmation des répertoires temporaires.
-
 Règles appliquées dans tout le fichier :
 
 - aucun `subprocess` avec `shell=True`, aucune commande construite par concaténation ;
@@ -292,6 +322,11 @@ simplement si quelqu'un regarde par-dessus l'épaule :
 | `35` Connexions Réseau | connexions actives (services, hôtes distants) |
 | `33` Inspecteur d'Env | variables d'environnement (parfois des secrets non détectés par le masquage automatique) |
 | `16` Générateur Mdp | mots de passe générés affichés en clair |
+| `61` Phrase de Passe | phrases de passe générées en clair |
+| `64` Ports en Écoute | services exposés sur cette machine |
+
+Depuis la v1.6.0 l'avertissement **bloque** : rien ne s'affiche tant que tu n'as pas
+confirmé par `Entrée`, et `n` annule le module sans rien révéler.
 
 ## Avertissement
 
@@ -300,6 +335,28 @@ Les fonctionnalités réseau (Scan LAN, Check Ports, ARP Table, Net Connections.
 Le module **Diskpart Simplifié** (`41`) est destructif : il efface le disque sélectionné, recrée une partition principale, formate le volume, attribue une lettre et active la partition. Vérifie toujours le numéro, le modèle, la taille et les lettres affichées avant de confirmer.
 
 Le module **Nettoyer les fichiers temporaires** (`19`) supprime des fichiers sur le disque. Depuis la v1.4.0 il affiche d'abord ce qu'il compte supprimer et attend la saisie de `SUPPRIMER` ; les fichiers récents et les répertoires de session sont protégés.
+
+## Changelog v1.6.0
+
+### 5 nouveaux modules (59 → 64)
+
+| # | Module | Ce qu'il fait |
+|---|---|---|
+| 60 | Batterie / Alimentation | charge, autonomie restante, secteur, températures et ventilateurs si le système les expose |
+| 61 | Phrase de Passe | phrases mémorisables tirées dans une liste de 260 mots avec `secrets`, entropie et verdict de robustesse |
+| 62 | Intégrité Fichiers | empreinte SHA-256 d'une arborescence, puis comparaison — détecte fichiers modifiés, ajoutés et supprimés |
+| 63 | Benchmark | débit CPU (SHA-256), mémoire et disque (écriture avec `fsync` + lecture) |
+| 64 | Ports en Écoute | services en écoute, processus associé, et alerte sur ceux exposés sur `0.0.0.0` |
+
+### Confidentialité
+
+- l'avertissement 🔒 **bloque désormais l'affichage** : rien n'est révélé avant confirmation, `n` annule le module
+- étendu aux modules `61` et `64`
+
+### Secret
+
+Un code bien connu, tapé dans le menu principal, débloque un thème et un module cachés.
+À toi de le trouver. 🎮
 
 ## Changelog v1.5.0
 
@@ -364,7 +421,7 @@ Le module **Nettoyer les fichiers temporaires** (`19`) supprime des fichiers sur
 - tout tableau affiché est exportable en JSON, CSV ou HTML — sans modifier les modules
 - export HTML autonome (thème sombre, en-têtes fixes, contenu échappé)
 
-### Sécurité — audit complet, 20 correctifs (détail dans `AUDIT.md`)
+### Sécurité — 20 correctifs
 
 - 🔴 auto-update : HTTPS + hôte en liste blanche, vérification SHA-256, contrôle de sanité du fichier, sauvegarde obligatoire
 - 🔴 génération de mots de passe et de jetons : passage de `random` (prévisible) à `secrets`

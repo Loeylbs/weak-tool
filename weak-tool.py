@@ -68,6 +68,7 @@ from rich.table   import Table
 from rich.text    import Text
 from rich.rule    import Rule
 from rich.align   import Align
+from rich.color   import Color as RichColor
 from rich.live    import Live
 from rich         import box
 from rich.markup  import escape as _rich_escape
@@ -247,10 +248,24 @@ def inside(child, parent):
 
 # ── CONFIG ───────────────────────────────────────────────
 TOOL_NAME    = "weak-tool"
-VERSION      = "v1.6.0"
+VERSION      = "v1.7.0"
 LANG         = "fr"
 CMD_HISTORY  = deque(maxlen=20)
-MENU_ANIM_DELAY = 0.08
+
+# ── ANIMATION DU MENU ────────────────────────────────────
+# "soft" : la bordure reste dessinee en permanence, seule une petite trainee
+#          la parcourt en surbrillance. C'est le defaut.
+# "off"  : bordures totalement statiques, le menu ne se redessine plus qu'a la
+#          frappe (zero scintillement sur les consoles lentes).
+# "auto" : anime seulement dans un terminal capable de composer l'image entiere
+#          avant de l'afficher. C'est le defaut.
+# "soft" : force l'animation partout, y compris la ou elle scintille.
+# "off"  : jamais d'animation.
+MENU_ANIM_MODES = ("auto", "soft", "off")
+MENU_ANIM       = "auto"
+MENU_ANIM_DELAY = 0.22      # ~4,5 images/s : la trainee avance par pas plus
+MENU_ANIM_STEP  = 4         # larges, pour la meme vitesse a l'ecran
+MENU_ANIM_FPS   = 12
 MENU_ANIM_COLORS = [
     "bright_magenta", "magenta", "bright_cyan", "cyan",
     "bright_yellow", "yellow", "bright_green", "green",
@@ -281,6 +296,7 @@ PREFS_PATH           = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), f".{TOOL_NAME}_prefs.json"
 )
 FAVORITES            = set()
+ARCADE_BEST          = 0        # meilleur score au 2048 du mode arcade
 
 # ── THÈMES ───────────────────────────────────────────────
 THEMES = {
@@ -422,7 +438,8 @@ def t(key: str) -> str:
         "n54": "Exporter Résultat", "n55": "Inspecteur TLS", "n56": "En-têtes HTTP",
         "n57": "Enregistrements DNS", "n58": "Décodeur JWT", "n59": "Préférences",
         "n60": "Batterie / Alim", "n61": "Phrase de Passe", "n62": "Intégrité Fichiers",
-        "n63": "Benchmark", "n64": "Ports en Écoute", "n99": "Mode Arcade",
+        "n63": "Benchmark", "n64": "Ports en Écoute", "n65": "Bilan de Santé",
+        "n99": "Mode Arcade",
         "theme": "Changer Thème", "hist": "Historique", "lang": "Langue (FR/EN)",
         "quit": "[ QUITTER ]", "prompt": "  ❯ ", "bye": "À plus !",
         "err": "Choix invalide.", "pause": "  ↵ Entrée pour continuer..."
@@ -454,7 +471,8 @@ def t(key: str) -> str:
         "n54": "Export Result", "n55": "TLS Inspector", "n56": "HTTP Headers",
         "n57": "DNS Records", "n58": "JWT Decoder", "n59": "Preferences",
         "n60": "Battery / Power", "n61": "Passphrase", "n62": "File Integrity",
-        "n63": "Benchmark", "n64": "Listening Ports", "n99": "Arcade Mode",
+        "n63": "Benchmark", "n64": "Listening Ports", "n65": "Health Check",
+        "n99": "Arcade Mode",
         "theme": "Change Theme", "hist": "History", "lang": "Language (EN/FR)",
         "quit": "[ QUIT ]", "prompt": "  ❯ ", "bye": "See ya!",
         "err": "Invalid choice.", "pause": "  ↵ Press Enter to continue..."
@@ -571,18 +589,43 @@ def _save_update_config(data):
     write_private_json(UPDATE_CONFIG_PATH, data)
 
 # ── NOM PERSONNALISÉ (pseudo) ─────────────────────────────
-def _load_display_name():
+# Typographies proposees pour le pseudo. "blocks" est dessinee par l'outil
+# lui-meme (voir BLOCK_GLYPHS) : elle ne depend d'aucune police pyfiglet et
+# rend le meme resultat partout. "auto" laisse l'outil prendre la plus large
+# qui tient a l'ecran.
+BANNER_FONT_CHOICES = [
+    "blocks", "auto", "block", "doom", "speed", "slant", "chunky",
+    "cyberlarge", "standard", "shadow", "rounded", "colossal", "starwars",
+    "larry3d", "banner3-D", "epic", "stop", "graffiti", "small", "mini",
+]
+BANNER_STYLES = ("gradient", "wave", "vertical", "solid")
+DEFAULT_BANNER_FONT  = "blocks"
+DEFAULT_BANNER_STYLE = "gradient"
+
+
+def _load_name_config():
     try:
         with open(NAME_CONFIG_PATH, "r", encoding="utf-8") as f:
-            saved = (json.load(f).get("display_name") or "").strip()
-            return saved if saved else TOOL_NAME
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
     except Exception:
-        return TOOL_NAME
+        return {}
 
-def _save_display_name(name):
-    return write_private_json(NAME_CONFIG_PATH, {"display_name": name})
 
-DISPLAY_NAME = _load_display_name()
+def _save_name_config():
+    return write_private_json(NAME_CONFIG_PATH, {
+        "display_name": DISPLAY_NAME,
+        "banner_font": BANNER_FONT,
+        "banner_style": BANNER_STYLE,
+    })
+
+
+_NAME_CFG    = _load_name_config()
+DISPLAY_NAME = (str(_NAME_CFG.get("display_name") or "").strip() or TOOL_NAME)[:24]
+BANNER_FONT  = _NAME_CFG.get("banner_font")
+BANNER_FONT  = BANNER_FONT if BANNER_FONT in BANNER_FONT_CHOICES else DEFAULT_BANNER_FONT
+BANNER_STYLE = _NAME_CFG.get("banner_style")
+BANNER_STYLE = BANNER_STYLE if BANNER_STYLE in BANNER_STYLES else DEFAULT_BANNER_STYLE
 
 def _parse_version(v):
     v = v.lstrip("vV")
@@ -921,39 +964,239 @@ def check_for_updates():
         time.sleep(1.2)
 
 # ── DÉCOR / BANNER ───────────────────────────────────────
-def _gradient_banner(ascii_logo: str):
-    theme_key = THEME_NAMES[CURRENT_THEME_IDX]
-    lines = ascii_logo.rstrip().splitlines()
+# ── TYPOGRAPHIE DU PSEUDO ─────────────────────────────────
+# Police « blocs » dessinee a la main : 5 lignes de 5 pixels par caractere.
+# Elle donne le rendu plein des logos ASCII modernes sans dependre d'une
+# police pyfiglet particuliere (celles a base de blocs sont absentes des
+# versions courantes du paquet).
+BLOCK_GLYPHS = {
+    "A": ("01110", "10001", "11111", "10001", "10001"),
+    "B": ("11110", "10001", "11110", "10001", "11110"),
+    "C": ("01111", "10000", "10000", "10000", "01111"),
+    "D": ("11110", "10001", "10001", "10001", "11110"),
+    "E": ("11111", "10000", "11110", "10000", "11111"),
+    "F": ("11111", "10000", "11110", "10000", "10000"),
+    "G": ("01111", "10000", "10011", "10001", "01111"),
+    "H": ("10001", "10001", "11111", "10001", "10001"),
+    "I": ("11111", "00100", "00100", "00100", "11111"),
+    "J": ("00111", "00010", "00010", "10010", "01100"),
+    "K": ("10001", "10010", "11100", "10010", "10001"),
+    "L": ("10000", "10000", "10000", "10000", "11111"),
+    "M": ("10001", "11011", "10101", "10001", "10001"),
+    "N": ("10001", "11001", "10101", "10011", "10001"),
+    "O": ("01110", "10001", "10001", "10001", "01110"),
+    "P": ("11110", "10001", "11110", "10000", "10000"),
+    "Q": ("01110", "10001", "10101", "10011", "01111"),
+    "R": ("11110", "10001", "11110", "10010", "10001"),
+    "S": ("01111", "10000", "01110", "00001", "11110"),
+    "T": ("11111", "00100", "00100", "00100", "00100"),
+    "U": ("10001", "10001", "10001", "10001", "01110"),
+    "V": ("10001", "10001", "10001", "01010", "00100"),
+    "W": ("10001", "10001", "10101", "11011", "10001"),
+    "X": ("10001", "01010", "00100", "01010", "10001"),
+    "Y": ("10001", "01010", "00100", "00100", "00100"),
+    "Z": ("11111", "00010", "00100", "01000", "11111"),
+    "0": ("01110", "10011", "10101", "11001", "01110"),
+    "1": ("00100", "01100", "00100", "00100", "01110"),
+    "2": ("01110", "10001", "00110", "01000", "11111"),
+    "3": ("11110", "00001", "00110", "00001", "11110"),
+    "4": ("00110", "01010", "10010", "11111", "00010"),
+    "5": ("11111", "10000", "11110", "00001", "11110"),
+    "6": ("01110", "10000", "11110", "10001", "01110"),
+    "7": ("11111", "00001", "00010", "00100", "01000"),
+    "8": ("01110", "10001", "01110", "10001", "01110"),
+    "9": ("01110", "10001", "01111", "00001", "01110"),
+    "-": ("00000", "00000", "11111", "00000", "00000"),
+    "_": ("00000", "00000", "00000", "00000", "11111"),
+    ".": ("00000", "00000", "00000", "00000", "00100"),
+    " ": ("00000", "00000", "00000", "00000", "00000"),
+}
 
-    if theme_key == "neon":
-        gradient = ["bright_yellow", "bright_cyan", "bright_magenta", "bright_cyan", "bright_yellow"]
-    elif theme_key == "cyber":
-        gradient = ["bright_cyan","cyan","blue","bright_blue","cyan","bright_cyan"]
-    elif theme_key == "matrix":
-        gradient = ["bright_green","green","bright_green","green","bright_green","green"]
-    elif theme_key == "blood":
-        gradient = ["bright_red","red","bright_red","red","bright_red","bright_red"]
-    elif theme_key == "graffiti":
-        gradient = ["bright_magenta","bright_cyan","bright_yellow","bright_cyan","bright_magenta"]
-    elif theme_key == "dracula":
-        gradient = ["bright_magenta","purple4","bright_cyan","purple4","bright_magenta","purple4"]
-    elif theme_key == "blue-magic":
-        gradient = ["bright_cyan","cyan","blue","bright_blue","cyan","bright_cyan"]
-    elif theme_key == "sunset":
-        gradient = ["gold1","orange1","deep_pink3","orange1","gold1","hot_pink"]
-    elif theme_key == "arctic":
-        gradient = ["light_cyan1","sky_blue1","deep_sky_blue1","steel_blue1","sky_blue1","light_cyan1"]
-    elif theme_key == "arcade":
-        gradient = ["bright_magenta","bright_yellow","bright_cyan","bright_green","bright_yellow","bright_magenta"]
-    else:
-        gradient = ["white","bright_white","white","bright_white","white","white"]
 
-    for i, line in enumerate(lines):
-        color = gradient[i % len(gradient)]
-        console.print(Align.center(Text(line, style=f"bold {color}")))
+def _block_font_lines(text: str, cell: str = "██", gap: int = 1):
+    """Rend le texte avec la police blocs interne. `cell` est le motif d'un
+    pixel allume : deux caracteres donnent des lettres bien proportionnees,
+    un seul les rend deux fois plus etroites quand la place manque."""
+    chars = [c for c in text.upper() if c in BLOCK_GLYPHS]
+    if not chars:
+        return []
+    blank = " " * len(cell)
+    sep = blank * gap
+    lines = []
+    for row in range(5):
+        parts = []
+        for ch in chars:
+            bits = BLOCK_GLYPHS[ch][row]
+            parts.append("".join(cell if b == "1" else blank for b in bits))
+        lines.append(sep.join(parts))
+    return lines
+
+
+def _figlet_lines(text: str, font: str, width: int):
+    try:
+        out = pyfiglet.figlet_format(text, font=font, width=max(width, 40))
+    except Exception:
+        return None
+    lines = out.rstrip("\n").splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if not lines:
+        return None
+    # pyfiglet aligne a gauche avec un creux commun : on le retire pour que le
+    # centrage porte sur le dessin lui-meme et non sur son remplissage.
+    pad = min((len(l) - len(l.lstrip(" ")) for l in lines if l.strip()), default=0)
+    lines = [l[pad:].rstrip() for l in lines]
+    if max((len(l) for l in lines), default=0) > width:
+        return None
+    return lines
+
+
+def _pad_block(lines):
+    """Aligne toutes les lignes sur la meme largeur. Chaque ligne du logo est
+    centree separement a l'affichage : sans ce calage, une ligne plus courte
+    que les autres se retrouve decalee et le logo part de travers."""
+    lines = [l.rstrip() for l in lines]
+    span = max((len(l) for l in lines), default=0)
+    return [l.ljust(span) for l in lines]
+
+
+def _banner_lines(text: str, width: int):
+    """Retourne les lignes du logo pour le pseudo, en respectant la typo
+    choisie et en repliant sur une variante plus etroite si l'ecran est trop
+    petit. Le repli garantit qu'un pseudo long reste toujours affichable."""
+    return _pad_block(_banner_lines_raw(text, width))
+
+
+def _banner_lines_raw(text: str, width: int):
+    if BANNER_FONT == "blocks":
+        for cell, gap in (("██", 1), ("█", 1), ("█", 0)):
+            lines = _block_font_lines(text, cell=cell, gap=gap)
+            if lines and max(len(l) for l in lines) <= width:
+                return lines
+    elif BANNER_FONT != "auto":
+        lines = _figlet_lines(text, BANNER_FONT, width)
+        if lines:
+            return lines
+
+    for cell, gap in (("██", 1), ("█", 1)):
+        lines = _block_font_lines(text, cell=cell, gap=gap)
+        if lines and max(len(l) for l in lines) <= width:
+            return lines
+    for font in ("block", "doom", "speed", "standard", "small", "mini"):
+        lines = _figlet_lines(text, font, width)
+        if lines:
+            return lines
+    return [f"/ {text.upper()} \\"]
+
+
+# Degrade applique au logo, par theme. Les couleurs sont interpolees en RGB :
+# le fondu est continu au lieu de sauter d'une teinte a l'autre.
+THEME_BANNER_STOPS = {
+    "neon":       ["bright_yellow", "bright_cyan", "bright_magenta", "bright_cyan", "bright_yellow"],
+    "cyber":      ["bright_cyan", "cyan", "blue", "bright_blue", "bright_cyan"],
+    "matrix":     ["bright_green", "green", "bright_green", "green", "bright_green"],
+    "blood":      ["bright_red", "red", "dark_red", "red", "bright_red"],
+    "graffiti":   ["bright_magenta", "bright_cyan", "bright_yellow", "bright_cyan", "bright_magenta"],
+    "dracula":    ["bright_magenta", "purple4", "bright_cyan", "purple4", "bright_magenta"],
+    "blue-magic": ["bright_cyan", "cyan", "blue", "bright_blue", "bright_cyan"],
+    "sunset":     ["gold1", "orange1", "deep_pink3", "hot_pink", "gold1"],
+    "arctic":     ["light_cyan1", "sky_blue1", "deep_sky_blue1", "steel_blue1", "light_cyan1"],
+    "arcade":     ["bright_magenta", "bright_yellow", "bright_cyan", "bright_green", "bright_magenta"],
+}
+
+_RGB_CACHE = {}
+
+
+def _rgb_of(color_name: str):
+    if color_name not in _RGB_CACHE:
+        try:
+            trip = RichColor.parse(color_name).get_truecolor()
+            _RGB_CACHE[color_name] = (trip.red, trip.green, trip.blue)
+        except Exception:
+            _RGB_CACHE[color_name] = (200, 200, 200)
+    return _RGB_CACHE[color_name]
+
+
+def _banner_stops():
+    key = THEME_NAMES[CURRENT_THEME_IDX]
+    stops = THEME_BANNER_STOPS.get(key)
+    if not stops:
+        stops = [th()["primary"], th()["accent"], th()["secondary"], th()["primary"]]
+    return [_rgb_of(c) for c in stops]
+
+
+def _color_at(stops, pos: float) -> str:
+    """Couleur du degrade a la position pos (0.0 -> 1.0), en #RRGGBB."""
+    pos = max(0.0, min(1.0, pos))
+    if len(stops) == 1:
+        r, g, b = stops[0]
+        return f"#{r:02x}{g:02x}{b:02x}"
+    scaled = pos * (len(stops) - 1)
+    i = min(int(scaled), len(stops) - 2)
+    f = scaled - i
+    (r1, g1, b1), (r2, g2, b2) = stops[i], stops[i + 1]
+    r = int(r1 + (r2 - r1) * f)
+    g = int(g1 + (g2 - g1) * f)
+    b = int(b1 + (b2 - b1) * f)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _banner_logo_rows(lines):
+    """Peint le logo selon le style choisi et renvoie les lignes pretes a
+    afficher. Le degrade est horizontal (ou diagonal en mode wave) : il suit la
+    forme des lettres au lieu de colorer chaque ligne d'un bloc uni."""
+    if not lines:
+        return []
+    stops = _banner_stops()
+    span = max((len(l) for l in lines), default=1) or 1
+    height = max(1, len(lines))
+    rows = []
+
+    if BANNER_STYLE == "solid":
+        color = th()["primary"]
+        return [Align.center(Text(line, style=f"bold {color}")) for line in lines]
+
+    if BANNER_STYLE == "vertical":
+        for row, line in enumerate(lines):
+            color = _color_at(stops, row / max(1, height - 1) if height > 1 else 0.0)
+            rows.append(Align.center(Text(line, style=f"bold {color}")))
+        return rows
+
+    diagonal = BANNER_STYLE == "wave"
+    for row, line in enumerate(lines):
+        text = Text()
+        offset = (row / height) * 0.35 if diagonal else 0.0
+        for col, ch in enumerate(line):
+            if ch == " ":
+                text.append(" ")
+                continue
+            pos = (col / max(1, span - 1)) + offset
+            text.append(ch, style=f"bold {_color_at(stops, pos % 1.0 if diagonal else pos)}")
+        rows.append(Align.center(text))
+    return rows
+
+
+def _gradient_banner(lines):
+    for row in _banner_logo_rows(lines):
+        console.print(row)
 
 def _screen_width():
-    return max(84, min(console.width, 170))
+    # On ne depasse jamais la largeur reelle de la console : forcer un plancher
+    # plus large qu'elle faisait passer le logo et les cadres a la ligne.
+    # Le plafond laisse de la marge pour aligner les cinq categories sur une
+    # rangee sur un ecran large.
+    try:
+        real = console.width
+    except Exception:
+        real = 84
+    return max(40, min(real, 200))
+
+
+def _logo_width():
+    """Largeur utilisable par le logo, avec une marge pour le centrage."""
+    return max(20, _screen_width() - 2)
 
 def _neon_line(width=None):
     width = width or _screen_width()
@@ -969,10 +1212,11 @@ def _neon_line(width=None):
     text.append(".".join([""] * right), style=th()["primary"])
     return text
 
-def _starfield(width, rows=2):
+def _starfield_rows(width, rows=2):
     rng = random.Random(1337)
     chars = (".", "·", "*")
     dim, sec = th()["dim_col"], th()["secondary"]
+    out = []
     for _ in range(rows):
         line = Text()
         for _c in range(width):
@@ -982,11 +1226,14 @@ def _starfield(width, rows=2):
                 line.append(ch, style=style)
             else:
                 line.append(" ")
-        console.print(Align.center(line))
+        out.append(Align.center(line))
+    return out
 
-def _pixel_fade(width, rows=2, base_density=0.14):
+
+def _pixel_fade_rows(width, rows=2, base_density=0.14):
     rng = random.Random(2026)
     pri, dim = th()["primary"], th()["dim_col"]
+    out = []
     for i in range(rows):
         density = base_density * (1 - i / max(1, rows))
         line = Text()
@@ -997,39 +1244,74 @@ def _pixel_fade(width, rows=2, base_density=0.14):
                 line.append(ch, style=style)
             else:
                 line.append(" ")
-        console.print(Align.center(line))
+        out.append(Align.center(line))
+    return out
+
+
+def _starfield(width, rows=2):
+    for row in _starfield_rows(width, rows):
+        console.print(row)
+
+
+def _pixel_fade(width, rows=2, base_density=0.14):
+    for row in _pixel_fade_rows(width, rows, base_density):
+        console.print(row)
 
 def _anim_color():
     return th()["primary"]
 
-def banner():
-    clr()
-    width = _screen_width()
+def _banner_parts(width, level="full"):
+    """Elements de la banniere, du plus decore au plus ras.
+
+    `level` permet de la comprimer quand la fenetre est basse : « full » avec
+    champ d'etoiles et fondu de pixels, « slim » avec le seul logo, « small »
+    avec un logo de trois lignes, « mini » reduit a une ligne de texte. Sans
+    cela la banniere et le menu depassent la hauteur du terminal, qui se met
+    alors a defiler et a scintiller a chaque rafraichissement.
+    """
     sec, dim = th()["secondary"], th()["dim_col"]
     privilege = "ADMIN" if is_admin() else "USER"
-    meta = f"{VERSION} · {privilege} · {getpass.getuser()}@{platform.node()} · {datetime.now().strftime('%H:%M:%S')}"
+    meta = (f"{VERSION} · {privilege} · {getpass.getuser()}@{platform.node()} · "
+            f"{datetime.now().strftime('%H:%M:%S')}")
 
-    console.print()
-    _starfield(width)
+    if level == "mini":
+        pri = th()["primary"]
+        return [Align.center(Text.assemble(
+            (f"/ {DISPLAY_NAME.upper()} \\", f"bold {pri}"), ("   ", dim), (meta, dim)))]
 
-    ascii_logo = None
-    for font in ("ansi_shadow", "big", "standard", "slant", "small", "mini"):
-        try:
-            candidate = pyfiglet.figlet_format(DISPLAY_NAME, font=font, width=width)
-        except Exception:
-            continue
-        lines = candidate.rstrip().splitlines()
-        if max((len(line) for line in lines), default=0) <= width:
-            ascii_logo = candidate
-            break
-    if ascii_logo is None:
-        ascii_logo = f"/ {DISPLAY_NAME.upper()} \\"
+    parts = []
+    if level == "full":
+        parts.append(Text(""))
+        parts += _starfield_rows(width)
 
-    _gradient_banner(ascii_logo)
-    _pixel_fade(width)
-    console.print(Align.center(Text(meta, style=dim)))
-    console.print(Align.center(Text(f"theme:{th()['name']}", style=sec)))
-    console.print()
+    if level == "small":
+        # Deux lignes de moins que le logo plein, mais le pseudo reste dessine.
+        # La typo choisie est conservee si elle tient deja en quatre lignes ;
+        # sinon on bascule sur la plus proche qui rentre.
+        lines = _banner_lines(DISPLAY_NAME, _logo_width())
+        if len(lines) > 4:
+            for font in ("small", "mini"):
+                candidate = _figlet_lines(DISPLAY_NAME, font, _logo_width())
+                if candidate and len(candidate) <= 4:
+                    lines = _pad_block(candidate)
+                    break
+        parts += _banner_logo_rows(lines)
+    else:
+        parts += _banner_logo_rows(_banner_lines(DISPLAY_NAME, _logo_width()))
+
+    if level == "full":
+        parts += _pixel_fade_rows(width)
+    parts.append(Align.center(Text(meta, style=dim)))
+    if level == "full":
+        parts.append(Align.center(Text(f"theme:{th()['name']}", style=sec)))
+    parts.append(Text(""))
+    return parts
+
+
+def banner(level="full"):
+    clr()
+    for part in _banner_parts(_screen_width(), level):
+        console.print(part)
 
 # ── CATÉGORIES DU MENU ────────────────────────────────────
 def get_cats():
@@ -1051,6 +1333,7 @@ def get_cats():
         ]),
         (t("c_mon"), th()["cat_mon"], [
             ("13", t("mon1")), ("14", t("mon2")), ("31", t("new3")),
+            ("65", t("n65")),
         ]),
         (t("c_uti"), th()["cat_uti"], [
             ("15", t("uti1")), ("16", t("uti2")), ("17", t("uti3")),
@@ -1146,6 +1429,24 @@ def _favorites_bar(width: int):
     )
 
 
+# Les boites « minimales » (matrix, arctic) n'ont ni montants ni coins : dans
+# le menu il n'y a alors aucun cadre a parcourir, et la trainee lumineuse est
+# invisible. Ces themes recoivent un cadre plein pour le menu uniquement, les
+# tableaux gardant le style d'origine.
+_MENU_BOX_FALLBACK = {
+    "matrix": box.SQUARE,
+    "arctic": box.DOUBLE,
+}
+
+
+def _menu_box():
+    theme_key = THEME_NAMES[CURRENT_THEME_IDX]
+    b = th()["box"]
+    if b.top_left.strip() and b.mid_left.strip():
+        return b
+    return _MENU_BOX_FALLBACK.get(theme_key, box.SQUARE)
+
+
 def _make_panel(title: str, color: str, items: list, width: int = 32, border_color: str = None, query: str = "") -> Panel:
     border_color = border_color or color
     t_obj = Text()
@@ -1165,14 +1466,145 @@ def _make_panel(title: str, color: str, items: list, width: int = 32, border_col
         title=Text(f"/ {title} \\", style=f"bold {border_color}"),
         title_align="center",
         border_style=border_color,
-        box=th()["box"],
+        box=_menu_box(),
         expand=False,
         width=width,
         padding=(0, 1),
     )
 
-# ── BORDURE TOURNANTE (spinner de chargement) ─────────────
-def _lit_border_render(panel, width: int, border_color: str, phase: int, tail: int = 5) -> Text:
+# ── AFFICHAGE SYNCHRONISE (anti-scintillement) ────────────
+# « Synchronized output », mode prive DEC 2026 : le terminal met son affichage
+# en pause entre les deux sequences et ne repeint qu'une fois l'image complete
+# recue. Sans cela il repeint pendant l'ecriture et l'on voit passer des images
+# a moitie tracees — c'est ce que l'oeil percoit comme un clignotement.
+# Les terminaux qui ne connaissent pas ce mode ignorent la sequence.
+_SYNC_BEGIN = "\x1b[?2026h"
+_SYNC_END   = "\x1b[?2026l"
+
+
+def _sync_supported() -> bool:
+    try:
+        return bool(console.is_terminal) and not getattr(console, "legacy_windows", False)
+    except Exception:
+        return False
+
+
+def _sync_write(seq: str):
+    if not _sync_supported():
+        return
+    try:
+        console.file.write(seq)
+        console.file.flush()
+    except Exception:
+        pass
+
+
+def _synced_update(live, renderable):
+    """Remplace une image par une autre sans laisser voir d'etat transitoire."""
+    _sync_write(_SYNC_BEGIN)
+    try:
+        live.update(renderable, refresh=True)
+    finally:
+        _sync_write(_SYNC_END)
+
+
+def _alt_screen_usable() -> bool:
+    """Le buffer alternatif est-il reellement disponible ?
+
+    Rich n'emet la sequence que si la console accepte les codes VT
+    (`is_terminal and not legacy_windows`). Sur une console Windows heritee le
+    reglage est ignore en silence : autant le savoir ici pour adapter le reste.
+    """
+    return _sync_supported()
+
+
+def _legacy_console() -> bool:
+    """Console Windows sans mode VT : Rich y dessine cellule par cellule via
+    l'API Win32, un mode ou l'animation scintille quoi qu'on fasse."""
+    try:
+        return bool(getattr(console, "legacy_windows", False)) and console.is_terminal
+    except Exception:
+        return False
+
+
+def _compositing_terminal() -> bool:
+    """Le terminal compose-t-il l'image avant de l'afficher ?
+
+    Distinction essentielle, et differente du mode VT : conhost.exe (la fenetre
+    « Invite de commandes ») accepte les codes VT mais applique les octets au
+    fur et a mesure qu'il les recoit, en repeignant a chaque ligne. Reecrire
+    l'ecran plusieurs fois par seconde y reste visible quoi qu'on optimise.
+    Windows Terminal, VS Code, ConEmu, WezTerm et les terminaux Unix peignent
+    l'image d'un seul tenant et n'ont pas ce defaut.
+
+    Aucun code VT ne permet de poser la question : on identifie le terminal par
+    les variables qu'il publie dans l'environnement.
+    """
+    if os.name != "nt":
+        return True
+    env = os.environ
+    return bool(
+        env.get("WT_SESSION")        # Windows Terminal
+        or env.get("WT_PROFILE_ID")
+        or env.get("TERM_PROGRAM")   # VS Code, et la plupart des terminaux tiers
+        or env.get("ConEmuPID")      # ConEmu / Cmder
+        or env.get("WEZTERM_PANE")
+        or env.get("ALACRITTY_WINDOW_ID")
+    )
+
+
+def _terminal_label() -> str:
+    if os.name != "nt":
+        return "terminal Unix"
+    env = os.environ
+    if env.get("WT_SESSION") or env.get("WT_PROFILE_ID"):
+        return "Windows Terminal"
+    if env.get("TERM_PROGRAM"):
+        return str(env.get("TERM_PROGRAM"))
+    if env.get("ConEmuPID"):
+        return "ConEmu"
+    if _legacy_console():
+        return "console Windows (sans VT)"
+    return "conhost.exe (Invite de commandes)"
+
+
+def _anim_active() -> bool:
+    """L'animation doit-elle tourner ?
+
+    En mode « auto » elle ne tourne que dans un terminal qui compose l'image
+    avant de l'afficher. Ailleurs — conhost.exe, console heritee — la reecriture
+    repetee de l'ecran se voit toujours, quel que soit le volume envoye : mieux
+    vaut un menu fixe qu'un menu qui clignote. « soft » force l'animation pour
+    qui la prefere malgre tout.
+    """
+    if MENU_ANIM == "off":
+        return False
+    if MENU_ANIM == "soft":
+        return not _legacy_console()
+    return _compositing_terminal() and not _legacy_console()
+
+
+def _anim_cadence():
+    """Delai et pas de la trainee, adaptes au terminal.
+
+    Une console Windows en mode restreint ne connait pas l'affichage
+    synchronise et repeint par appels Win32, beaucoup plus lents : on y espace
+    les images et on allonge le pas pour garder la meme vitesse apparente.
+    """
+    if not _sync_supported():
+        return MENU_ANIM_DELAY * 2.0, MENU_ANIM_STEP * 2
+    return MENU_ANIM_DELAY, MENU_ANIM_STEP
+
+
+# ── BORDURE TOURNANTE (trainee lumineuse) ─────────────────
+def _lit_border_render(panel, width: int, border_color: str, phase: int, tail: int = 10) -> Text:
+    """Redessine le panneau avec une trainee qui parcourt sa bordure.
+
+    La bordure reste TOUJOURS tracee : seule son intensite change sous la
+    trainee. Effacer les caracteres eteints (ce que faisait la version
+    precedente) faisait disparaitre puis reapparaitre le cadre a chaque
+    image, ce qui donnait un clignotement permanent des categories.
+    """
     opts = console.options.update(width=width)
     lines = console.render_lines(panel, opts, pad=False)
     h = len(lines)
@@ -1181,13 +1613,53 @@ def _lit_border_render(panel, width: int, border_color: str, phase: int, tail: i
     top_len, right_len, bottom_len, left_len = w, max(0, h - 2), w, max(0, h - 2)
     perim_len = max(1, top_len + right_len + bottom_len + left_len)
     lit = {(phase + k) % perim_len for k in range(tail)}
+    # Juste devant la trainee, une amorce a peine plus claire adoucit l'entree
+    # et la sortie de la lumiere au lieu d'un bord net qui « saute ».
+    halo = {(phase - 1) % perim_len, (phase + tail) % perim_len}
+    # La trainee change de COULEUR et pas seulement d'intensite : « gras » et
+    # « attenue » sur une meme teinte sont invisibles sur beaucoup de consoles,
+    # et le point lumineux ne se distinguait plus du reste du cadre.
+    glow = th()["accent"]
 
+    lit_style  = f"bold {glow}"
+    halo_style = f"bold {border_color}"
+
+    # Les caracteres consecutifs de meme style sont regroupes en un seul run.
+    # Sans ce regroupement, chaque caractere du panneau portait son propre code
+    # couleur ANSI : ~2800 codes et 19 Ko par image, un volume que le terminal
+    # n'arrivait pas a reecrire sans scintiller.
     out = Text()
+    run_chars, run_style = [], None
+
+    def flush():
+        nonlocal run_chars, run_style
+        if run_chars:
+            out.append("".join(run_chars), style=run_style)
+            run_chars = []
+
+    def emit(ch, style):
+        nonlocal run_chars, run_style
+        if run_chars and style == run_style:
+            run_chars.append(ch)
+            return
+        flush()
+        run_style = style
+        run_chars = [ch]
+
     for r, segs in enumerate(lines):
+        edge_row = (r == 0 or r == h - 1)
         col = 0
         for seg in segs:
             style_str = str(seg.style) if seg.style else ""
-            for ch in seg.text:
+            text = seg.text
+            # Contenu interieur : recopie d'un bloc, aucun caractere de bordure.
+            if not edge_row and col > 0 and col + len(text) < w:
+                flush()
+                out.append(text, style=seg.style)
+                col += len(text)
+                continue
+
+            for ch in text:
                 idx = None
                 if r == 0 and style_str == border_color:
                     idx = col
@@ -1198,21 +1670,25 @@ def _lit_border_render(panel, width: int, border_color: str, phase: int, tail: i
                 elif col == 0 and 0 < r < h - 1:
                     idx = top_len + right_len + bottom_len + (h - 2 - r)
 
-                if idx is not None:
-                    if idx in lit:
-                        out.append(ch, style=f"bold {border_color}")
-                    else:
-                        out.append(" ")
+                if idx is None:
+                    emit(ch, seg.style)
+                elif idx in lit:
+                    emit(ch, lit_style)
+                elif idx in halo:
+                    emit(ch, halo_style)
                 else:
-                    out.append(ch, style=seg.style)
+                    emit(ch, border_color)
                 col += 1
+        flush()
         out.append("\n")
     return out
 
 
 def _spin_panel_render(title: str, color: str, items: list, width: int,
-                        border_color: str, phase: int, tail: int = 5, query: str = "") -> Text:
+                        border_color: str, phase: int, tail: int = 10, query: str = ""):
     panel = _make_panel(title, color, items, width=width, border_color=border_color, query=query)
+    if not _anim_active():
+        return panel
     return _lit_border_render(panel, width, border_color, phase, tail)
 
 def _terminal_height():
@@ -1222,18 +1698,28 @@ def _terminal_height():
         return 24
 
 
-def _compact_menu_body(cats, width, typed=""):
+def _compact_menu_parts(cats, width, typed="", col_width=24,
+                        phase=0, framed=False):
+    """Menu dense : les modules sont listes en grille. `col_width` se resserre
+    quand il faut gagner des lignes.
+
+    `framed` entoure l'ensemble des categories d'un cadre unique parcouru par
+    la trainee lumineuse : les panneaux par categorie coutent deux lignes
+    chacun, un seul cadre n'en coute que deux au total.
+    """
     pri, dim = th()["primary"], th()["dim_col"]
-    per_row = max(2, min(5, (width - 4) // 24))
-    parts = [Align.center(Text(f"/ {DISPLAY_NAME.upper()} \\  {VERSION}",
-                               style=f"bold {pri}"))]
+    per_row = max(2, min(7, (width - 4) // col_width))
+    parts = []
     fav_bar = _favorites_bar(width)
     if fav_bar:
         parts.append(Align.center(fav_bar))
     for title, color, items in cats:
         grid = Table.grid(padding=(0, 1))
         for _ in range(per_row):
-            grid.add_column(width=24, overflow="ellipsis")
+            # no_wrap est indispensable : sans lui un libelle trop long est
+            # replie sur une seconde ligne au lieu d'etre tronque, et la
+            # hauteur du menu double sur une fenetre etroite.
+            grid.add_column(width=col_width, overflow="ellipsis", no_wrap=True)
         entries = [Text.assemble((f"{code} ", f"bold {color}" if _item_matches(typed, code, label) else dim),
                                   (label, "white" if _item_matches(typed, code, label) else dim))
                    for code, label in items]
@@ -1242,16 +1728,56 @@ def _compact_menu_body(cats, width, typed=""):
             grid.add_row(*(chunk + [Text("")] * (per_row - len(chunk))))
         parts.append(Align.center(Text(f"── {title} ──", style=f"bold {color}")))
         parts.append(Align.center(grid))
-    parts.append(Align.center(Text(f"{t('prompt')}{typed}", style=f"bold {pri}")))
-    parts.append(Align.center(_menu_footer_hint(cats, typed, dim)))
+
+    if not framed:
+        return parts
+
+    border = th()["border"]
+    box_w = max(24, min(width - 2, per_row * (col_width + 1) + 3))
+    count = sum(1 for _, _, items in cats for code, _ in items if code != "00")
+    panel = Panel(Group(*parts), border_style=border, box=_menu_box(),
+                  width=box_w, padding=(0, 1),
+                  title=Text(f"/ {count} MODULES \\", style=f"bold {border}"),
+                  title_align="center")
+    if not _anim_active():
+        return [Align.center(panel)]
+    return [Align.center(_lit_border_render(panel, box_w, border, phase, tail=16))]
+
+
+def _menu_footer_parts(cats, typed, pri, dim, slim=False):
+    parts = [Align.center(Text(f"{t('prompt')}{typed}", style=f"bold {pri}"))]
+    if not slim:
+        parts.append(Align.center(_menu_footer_hint(cats, typed, dim)))
     parts.append(Align.center(_live_gauge_text(dim)))
+    return parts
+
+
+def _compact_menu_body(cats, width, typed=""):
+    pri, dim = th()["primary"], th()["dim_col"]
+    parts = [Align.center(Text(f"/ {DISPLAY_NAME.upper()} \\  {VERSION}",
+                               style=f"bold {pri}"))]
+    parts += _compact_menu_parts(cats, width, typed)
+    parts += _menu_footer_parts(cats, typed, pri, dim)
     return Group(*parts)
 
 
-def _spin_menu_body(cats, width, wide, panel_w, phase, typed=""):
-    if _terminal_height() < 40:
-        return _compact_menu_body(cats, width, typed)
+def _row_panels_width(cats, panel_w) -> int:
+    """Largeur necessaire pour aligner toutes les categories sur une rangee."""
+    return len(cats) * panel_w + (len(cats) - 1) + 2
 
+
+def _panel_menu_parts(cats, width, wide, panel_w, phase, typed="",
+                      slim_footer=False, tight=False, single_row=False):
+    """Menu en panneaux encadres. `tight` retire les separateurs decoratifs :
+    trois lignes de gagnees, ce qui permet de garder un cadre par categorie
+    (et donc la trainee lumineuse) sur une fenetre un peu basse.
+
+    `single_row` aligne les cinq categories cote a cote. La disposition
+    historique empile SYSTEME au-dessus des quatre autres et depasse 45 lignes ;
+    sur un ecran large, une seule rangee n'en occupe qu'une vingtaine et permet
+    de garder les cadres par categorie la ou il fallait sinon tout tasser dans
+    une grille sans bordures.
+    """
     borders = [th()["border"]] * len(cats)
     pri = th()["primary"]
     dim = th()["dim_col"]
@@ -1260,11 +1786,24 @@ def _spin_menu_body(cats, width, wide, panel_w, phase, typed=""):
     fav_bar = _favorites_bar(width)
     if fav_bar:
         parts.append(Align.center(fav_bar))
-    parts += [
-        Align.center(_spin_panel_render(*cats[0], panel_w, borders[0], phase, query=typed)),
-        Align.center(_neon_line(width)),
-        Align.center(Text(". " * 24, style=dim)),
-    ]
+
+    if single_row:
+        grid = Table.grid(padding=(0, 1))
+        grid.add_row(*[
+            _spin_panel_render(*cats[i], panel_w, borders[i], phase, query=typed)
+            for i in range(len(cats))
+        ])
+        parts.append(Align.center(grid))
+        if not tight:
+            parts.append(Align.center(_neon_line(width)))
+        parts += _menu_footer_parts(cats, typed, pri, dim, slim_footer)
+        return parts
+
+    parts.append(Align.center(_spin_panel_render(*cats[0], panel_w, borders[0],
+                                                 phase, query=typed)))
+    if not tight:
+        parts.append(Align.center(_neon_line(width)))
+        parts.append(Align.center(Text(". " * 24, style=dim)))
 
     if wide:
         grid = Table.grid(padding=(0, 1))
@@ -1287,17 +1826,115 @@ def _spin_menu_body(cats, width, wide, panel_w, phase, typed=""):
             _spin_panel_render(*cats[1], panel_w, borders[1], phase, query=typed),
         )
         parts.append(Align.center(top))
-        parts.append(Align.center(Text(". " * 24, style=dim)))
+        if not tight:
+            parts.append(Align.center(Text(". " * 24, style=dim)))
         parts.append(Align.center(middle))
 
-    parts.append(Align.center(Text("-" * min(width - 12, 112), style=dim)))
-    parts.append(Text(""))
-    parts.append(Align.center(Text(f"{t('prompt')}{typed}", style=f"bold {pri}")))
-    parts.append(Align.center(_menu_footer_hint(cats, typed, dim)))
-    parts.append(Align.center(_live_gauge_text(dim)))
+    if not tight:
+        parts.append(Align.center(Text("-" * min(width - 12, 112), style=dim)))
+    parts += _menu_footer_parts(cats, typed, pri, dim, slim_footer)
+    return parts
+
+
+def _spin_menu_body(cats, width, wide, panel_w, phase, typed=""):
+    if _terminal_height() < 40:
+        return _compact_menu_body(cats, width, typed)
+    return Group(*_panel_menu_parts(cats, width, wide, panel_w, phase, typed))
+
+
+# ── CHOIX DE LA MISE EN PAGE ──────────────────────────────
+# Du plus aere au plus dense. Le menu doit tenir en entier dans la fenetre :
+# des qu'il la depasse, le terminal se met a defiler et l'ecran clignote a
+# chaque rafraichissement de l'animation.
+# Le logo du pseudo est ce que l'on sacrifie en DERNIER : c'est la signature de
+# l'outil, et la faire disparaitre pour gagner deux lignes donnait l'impression
+# que le pseudo s'effacait tout seul « apres certaines manipulations » (un
+# changement de theme ou de langue suffit a rejouer ce calcul). On resserre donc
+# d'abord le menu jusqu'au bout, et seulement ensuite la banniere.
+MENU_LAYOUTS = (
+    # banniere, mode, largeur de colonne, pied reduit, cadre anime
+    ("full",  "panels",  24, False, False),
+    ("full",  "row",     24, False, False),
+    ("slim",  "panels",  24, False, False),
+    ("slim",  "row",     24, False, False),
+    ("mini",  "row",     24, False, False),
+    ("slim",  "tight",   24, False, False),
+    ("slim",  "tight",   24, True,  False),
+    ("slim",  "compact", 24, False, True),
+    ("slim",  "compact", 20, False, True),
+    ("slim",  "compact", 16, False, True),
+    ("slim",  "compact", 16, False, False),
+    ("slim",  "compact", 13, False, False),
+    ("slim",  "compact", 13, True,  False),
+    ("small", "compact", 13, False, False),
+    ("small", "compact", 13, True,  False),
+    ("mini",  "compact", 13, True,  False),
+)
+# fits=False signale qu'aucune mise en page ne rentre : l'appelant coupe alors
+# l'animation plutot que de faire defiler l'ecran a chaque image.
+_LAYOUT_CACHE = {"key": None, "layout": MENU_LAYOUTS[0], "fits": True}
+
+
+def _menu_frame(cats, width, wide, panel_w, phase, typed, layout):
+    banner_level, menu_mode, col_width, slim_footer, framed = layout
+    parts = list(_banner_parts(width, banner_level))
+    if menu_mode in ("panels", "tight", "row"):
+        parts += _panel_menu_parts(cats, width, wide, panel_w, phase, typed,
+                                   slim_footer, tight=(menu_mode == "tight"),
+                                   single_row=(menu_mode == "row"))
+    else:
+        pri, dim = th()["primary"], th()["dim_col"]
+        parts += _compact_menu_parts(cats, width, typed, col_width, phase, framed)
+        parts += _menu_footer_parts(cats, typed, pri, dim, slim_footer)
     return Group(*parts)
 
+
+def _frame_height(renderable, width) -> int:
+    try:
+        opts = console.options.update(width=width, height=None)
+        return len(console.render_lines(renderable, opts, pad=False))
+    except Exception:
+        return 0
+
+
+def _pick_menu_layout(cats, width, wide, panel_w, typed=""):
+    """Retient la mise en page la plus riche qui tient dans la hauteur.
+
+    Le calcul demande un rendu d'essai, trop couteux a refaire a chaque image :
+    il n'est relance que si la taille de la fenetre, le theme ou le nombre de
+    modules affiches a change.
+    """
+    height = _terminal_height()
+    key = (width, height, THEME_NAMES[CURRENT_THEME_IDX], len(FAVORITES),
+           sum(len(items) for _, _, items in cats), LANG, MENU_ANIM)
+    if _LAYOUT_CACHE["key"] == key:
+        return _LAYOUT_CACHE["layout"]
+
+    chosen, fits = MENU_LAYOUTS[-1], False
+    for layout in MENU_LAYOUTS:
+        # Une rangee unique ne se tente que si l'ecran est assez large pour
+        # aligner toutes les categories sans les tronquer.
+        if layout[1] == "row" and width < _row_panels_width(cats, panel_w):
+            continue
+        frame = _menu_frame(cats, width, wide, panel_w, 0, typed, layout)
+        # Une ligne de marge : le curseur laisse par Live occupe la derniere.
+        if _frame_height(frame, width) <= height - 1:
+            chosen, fits = layout, True
+            break
+
+    _LAYOUT_CACHE["key"] = key
+    _LAYOUT_CACHE["layout"] = chosen
+    _LAYOUT_CACHE["fits"] = fits
+    return chosen
+
+
+def _layout_fits() -> bool:
+    return bool(_LAYOUT_CACHE["fits"])
+
+
 def _spin_menu_intro(cats, width, wide, panel_w):
+    if not _anim_active():
+        return
     borders = [th()["border"]] * len(cats)
     dim = th()["dim_col"]
 
@@ -1342,55 +1979,18 @@ def _spin_menu_intro(cats, width, wide, panel_w):
         pass
 
 def _render_menu_frame(typed="", spin_intro=False):
-    banner()
+    """Affichage unique du menu, hors animation (sortie redirigee, --run...)."""
+    clr()
     cats = get_cats()
-    pri, dim = th()["primary"], th()["dim_col"]
     width = _screen_width()
     wide = width >= 145
     panel_w = 31 if wide else 34
-    borders = [th()["border"]] * len(cats)
 
     if spin_intro:
         _spin_menu_intro(cats, width, wide, panel_w)
 
-    fav_bar = _favorites_bar(width)
-    if fav_bar:
-        console.print(Align.center(fav_bar))
-
-    console.print(Align.center(_make_panel(*cats[0], width=panel_w, border_color=borders[0], query=typed)))
-    console.print(Align.center(_neon_line(width)))
-
-    console.print(Align.center(Text("· " * 24, style=dim)))
-
-    if wide:
-        grid = Table.grid(padding=(0, 1))
-        grid.add_row(
-            _make_panel(*cats[3], width=panel_w, border_color=borders[3], query=typed),
-            _make_panel(*cats[2], width=panel_w, border_color=borders[2], query=typed),
-            _make_panel(*cats[4], width=panel_w, border_color=borders[4], query=typed),
-            _make_panel(*cats[1], width=panel_w, border_color=borders[1], query=typed),
-        )
-        console.print(Align.center(grid))
-    else:
-        top = Table.grid(padding=(0, 1))
-        top.add_row(
-            _make_panel(*cats[3], width=panel_w, border_color=borders[3], query=typed),
-            _make_panel(*cats[4], width=panel_w, border_color=borders[4], query=typed),
-        )
-        middle = Table.grid(padding=(0, 1))
-        middle.add_row(
-            _make_panel(*cats[2], width=panel_w, border_color=borders[2], query=typed),
-            _make_panel(*cats[1], width=panel_w, border_color=borders[1], query=typed),
-        )
-        console.print(Align.center(top))
-        console.print(Align.center(Text("· " * 24, style=dim)))
-        console.print(Align.center(middle))
-
-    console.print(Align.center(Text("-" * min(width - 12, 112), style=dim)))
-    console.print()
-    console.print(Align.center(Text(f"{t('prompt')}{typed}", style=f"bold {pri}")))
-    console.print(Align.center(_menu_footer_hint(cats, typed, dim)))
-    console.print(Align.center(_live_gauge_text(dim)))
+    layout = _pick_menu_layout(cats, width, wide, panel_w, typed)
+    console.print(_menu_frame(cats, width, wide, panel_w, 0, typed, layout))
 
 _WIN_ARROWS  = {"H": "<UP>", "P": "<DOWN>", "K": "<LEFT>", "M": "<RIGHT>"}
 _UNIX_ARROWS = {"A": "<UP>", "B": "<DOWN>", "C": "<RIGHT>", "D": "<LEFT>"}
@@ -1561,14 +2161,62 @@ def _animated_menu_input():
         return None
 
     try:
-        banner()
+        clr()
         width = _screen_width()
         wide = width >= 145
         panel_w = 31 if wide else 34
         cats = get_cats()
-        body = _spin_menu_body(cats, width, wide, panel_w, phase, typed)
+        layout = _pick_menu_layout(cats, width, wide, panel_w)
+        body = _menu_frame(cats, width, wide, panel_w, phase, typed, layout)
 
-        with Live(body, console=console, refresh_per_second=20, transient=False) as live:
+        # Sans animation a jouer, on se passe entierement de Live : celui-ci
+        # n'apporterait que ses effets de bord (ecran alternatif, curseur
+        # masque, stdout redirige), dont un curseur qui reste invisible dans
+        # les modules sur les consoles qui restaurent mal l'etat en quittant
+        # l'ecran alternatif. Idem si la fenetre est trop petite pour afficher
+        # le menu entier. On redessine alors uniquement a la frappe.
+        if not _layout_fits() or not _anim_active():
+            console.show_cursor(True)
+            console.print(body)
+            while True:
+                ch = read_key()
+                if ch is None:
+                    time.sleep(0.02)
+                    continue
+                if not ch:
+                    continue
+                result = handle_key(ch)
+                if result is not None:
+                    return result
+                if konami_hit:
+                    return KONAMI_TRIGGER
+                _sync_write(_SYNC_BEGIN)
+                try:
+                    clr()
+                    console.print(_menu_frame(cats, width, wide, panel_w,
+                                              phase, typed, layout))
+                finally:
+                    _sync_write(_SYNC_END)
+
+        last_clock = ""
+        # La banniere fait partie du contenu anime : imprimee avant le Live,
+        # elle poussait le menu hors de l'ecran et forcait un defilement a
+        # chaque image. vertical_overflow="crop" garantit qu'aucune image ne
+        # depasse, meme si la fenetre est redimensionnee entre deux mesures.
+        # auto_refresh=False est essentiel : par defaut Rich relance un rendu
+        # complet MENU_ANIM_FPS fois par seconde meme quand rien n'a change
+        # (mesure : 300 Ko envoyes au terminal en deux secondes d'inactivite).
+        # On ne redessine desormais que sur changement reel.
+        #
+        # screen=True bascule sur le buffer alternatif du terminal (comme less
+        # ou htop) : l'ecran a une taille fixe, aucun defilement n'est possible
+        # et le curseur ne peut plus pousser le contenu vers le haut. Rich
+        # l'ignore purement et simplement si la console n'a pas le mode VT
+        # actif (console.py : `if self.is_terminal and not self.legacy_windows`),
+        # d'ou le repli sur l'affichage non anime plus bas.
+        with Live(body, console=console, refresh_per_second=MENU_ANIM_FPS,
+                  transient=False, vertical_overflow="crop",
+                  auto_refresh=False, screen=_alt_screen_usable()) as live:
             while True:
                 dirty = False
 
@@ -1591,20 +2239,53 @@ def _animated_menu_input():
                     panel_w = 31 if wide else 34
                     cats = get_cats()
                     dirty = True
+                new_layout = _pick_menu_layout(cats, width, wide, panel_w)
+                if new_layout != layout:
+                    layout = new_layout
+                    dirty = True
+                if not _layout_fits():
+                    # La fenetre a retreci sous le minimum : on sort du mode
+                    # anime plutot que de laisser l'ecran defiler.
+                    break
 
                 now = time.monotonic()
-                if now - last_spin >= MENU_ANIM_DELAY:
-                    phase += 3
+                anim_delay, anim_step = _anim_cadence()
+                if _anim_active() and now - last_spin >= anim_delay:
+                    phase += anim_step
                     last_spin = now
                     dirty = True
 
-                if dirty:
-                    live.update(_spin_menu_body(cats, width, wide, panel_w, phase, typed))
+                # L'horloge et les jauges du bas ne justifient PAS de redessiner
+                # l'ecran a elles seules : quand l'animation est coupee, ce
+                # seul rafraichissement produisait un flash complet toutes les
+                # secondes — le « clignotement » persistant, y compris pour qui
+                # avait desactive l'animation. Elles suivent donc les images de
+                # l'animation quand il y en a une, et restent figees sinon
+                # jusqu'a la prochaine touche (le menu est reaffiche a chaque
+                # retour de module, l'heure ne reste jamais fausse longtemps).
+                if _anim_active():
+                    clock = datetime.now().strftime("%H:%M:%S")
+                    if clock != last_clock:
+                        last_clock = clock
+                        dirty = True
 
-                time.sleep(0.01)
+                if dirty:
+                    _synced_update(live, _menu_frame(cats, width, wide, panel_w,
+                                                     phase, typed, layout))
+
+                time.sleep(0.02)
+
+        return _animated_menu_input()
     finally:
         if term_state is not None:
             termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, term_state)
+        # Rich montre le curseur avant de quitter l'ecran alternatif ; les
+        # consoles qui restaurent l'etat d'affichage a ce moment-la peuvent le
+        # laisser masque, et l'on saisit alors a l'aveugle dans les modules.
+        try:
+            console.show_cursor(True)
+        except Exception:
+            pass
 
 def draw_menu() -> str:
     return _animated_menu_input()
@@ -1619,7 +2300,7 @@ def section(label: str, color: str):
         expand=False,
         padding=(0, 4),
     )
-    if sys.stdin.isatty():
+    if sys.stdin.isatty() and _anim_active():
         try:
             width = _screen_width()
             with Live(Align.center(panel), console=console,
@@ -3132,10 +3813,49 @@ def mac_lookup():
     except Exception as e:
         error(f"Erreur réseau : {esc(e)}")
 
-def rename_tool():
+BANNER_STYLE_LABELS = {
+    "gradient": "Dégradé horizontal",
+    "wave":     "Vague (dégradé diagonal)",
+    "vertical": "Dégradé vertical (ligne par ligne)",
+    "solid":    "Couleur unie du thème",
+}
+
+
+def _available_banner_fonts():
+    """Ne garde que les typos que la version de pyfiglet installée sait
+    réellement rendre : la liste des polices varie d'une version à l'autre."""
+    ok = ["blocks", "auto"]
+    try:
+        installed = set(pyfiglet.FigletFont.getFonts())
+    except Exception:
+        installed = set()
+    ok += [f for f in BANNER_FONT_CHOICES if f not in ("blocks", "auto") and f in installed]
+    return ok
+
+
+def _preview_banner(font: str, style: str, text: str, width: int = None):
+    """Affiche le pseudo avec une typo/style donnés sans les rendre définitifs."""
+    global BANNER_FONT, BANNER_STYLE
+    saved = (BANNER_FONT, BANNER_STYLE)
+    BANNER_FONT, BANNER_STYLE = font, style
+    try:
+        _gradient_banner(_banner_lines(text, width or _logo_width()))
+    except Exception:
+        error("Aperçu impossible avec cette typo.")
+    finally:
+        BANNER_FONT, BANNER_STYLE = saved
+
+
+def _persist_banner(what: str):
+    if _save_name_config():
+        success(f"{what} — sauvegardé, repris au prochain lancement.")
+    else:
+        warn(f"{what} — pour cette session seulement (sauvegarde impossible).")
+
+
+def _change_pseudo():
     global DISPLAY_NAME
     col = th()["primary"]
-    console.print(f"[{col}]  Pseudo actuel : [bold white]{DISPLAY_NAME}[/bold white][/{col}]")
     new_name = console.input(
         f"[{col}]  Nouveau pseudo [dim](lettres/chiffres/espaces, sans accents, vide = annuler)[/dim] ❯ [/{col}]"
     ).strip()
@@ -3151,10 +3871,109 @@ def rename_tool():
         return
 
     DISPLAY_NAME = cleaned
-    if _save_display_name(cleaned):
-        success(f"Pseudo changé en [bold]{cleaned}[/bold] — sauvegardé, repris au prochain lancement.")
-    else:
-        warn(f"Pseudo changé en [bold]{cleaned}[/bold] pour cette session seulement (sauvegarde impossible).")
+    console.print()
+    _preview_banner(BANNER_FONT, BANNER_STYLE, DISPLAY_NAME)
+    console.print()
+    _persist_banner(f"Pseudo changé en [bold]{esc(cleaned)}[/bold]")
+
+
+def _change_banner_font():
+    global BANNER_FONT
+    col = th()["primary"]
+    fonts = _available_banner_fonts()
+
+    while True:
+        console.print()
+        console.print(f"  [{col}]Typographie du pseudo[/{col}] "
+                      f"[dim](* pour voir toutes les typos, vide = retour)[/dim]")
+        console.print()
+        grid = Table.grid(padding=(0, 3))
+        grid.add_column(); grid.add_column(); grid.add_column()
+        cells = []
+        for i, f in enumerate(fonts, 1):
+            marker = "●" if f == BANNER_FONT else "○"
+            note = " [dim](dessinée par l'outil)[/dim]" if f == "blocks" else \
+                   " [dim](la plus large qui tient)[/dim]" if f == "auto" else ""
+            cells.append(f"[dim]{i:2}[/dim] {marker} {f}{note}")
+        rows = (len(cells) + 2) // 3
+        for r in range(rows):
+            grid.add_row(*[cells[r + rows * c] if r + rows * c < len(cells) else ""
+                           for c in range(3)])
+        console.print(grid)
+
+        pick = console.input(f"\n[{col}]  Typo ❯ [/{col}]").strip()
+        if not pick:
+            return
+
+        if pick == "*":
+            sample = DISPLAY_NAME[:8]
+            for f in fonts:
+                console.print(f"\n  [dim]── {f} ──[/dim]")
+                _preview_banner(f, BANNER_STYLE, sample)
+            continue
+
+        if not pick.isdigit() or not (1 <= int(pick) <= len(fonts)):
+            error("Numéro invalide.")
+            continue
+
+        chosen = fonts[int(pick) - 1]
+        console.print()
+        _preview_banner(chosen, BANNER_STYLE, DISPLAY_NAME)
+        keep = console.input(f"\n[{col}]  Garder cette typo ? [dim][O/n][/dim] ❯ [/{col}]").strip().lower()
+        if keep in ("", "o", "oui", "y", "yes"):
+            BANNER_FONT = chosen
+            _persist_banner(f"Typo : [bold]{chosen}[/bold]")
+            return
+
+
+def _change_banner_style():
+    global BANNER_STYLE
+    col = th()["primary"]
+    console.print()
+    for i, style in enumerate(BANNER_STYLES, 1):
+        marker = "●" if style == BANNER_STYLE else "○"
+        console.print(f"  [dim]{i}[/dim] {marker} {BANNER_STYLE_LABELS.get(style, style)}")
+        _preview_banner(BANNER_FONT, style, DISPLAY_NAME[:6])
+        console.print()
+
+    pick = console.input(f"[{col}]  Style [dim](vide = retour)[/dim] ❯ [/{col}]").strip()
+    if not pick:
+        return
+    if not pick.isdigit() or not (1 <= int(pick) <= len(BANNER_STYLES)):
+        error("Numéro invalide.")
+        return
+    BANNER_STYLE = BANNER_STYLES[int(pick) - 1]
+    _persist_banner(f"Style : [bold]{BANNER_STYLE_LABELS[BANNER_STYLE]}[/bold]")
+
+
+def rename_tool():
+    col = th()["primary"]
+    while True:
+        t_ui = themed_table(border_style=col)
+        t_ui.add_column("Réglage", style=col, width=16)
+        t_ui.add_column("Valeur", style="bold white", width=40)
+        t_ui.add_row("Pseudo", esc(DISPLAY_NAME))
+        t_ui.add_row("Typographie", BANNER_FONT)
+        t_ui.add_row("Style", BANNER_STYLE_LABELS.get(BANNER_STYLE, BANNER_STYLE))
+        console.print(t_ui)
+
+        console.print()
+        console.print("  [dim]1[/dim] Changer le pseudo        [dim]2[/dim] Changer la typographie")
+        console.print("  [dim]3[/dim] Changer le style couleur [dim]4[/dim] Aperçu")
+        op = console.input(f"\n[{col}]  Choix [dim](vide = retour)[/dim] ❯ [/{col}]").strip()
+
+        if op == "1":
+            _change_pseudo()
+        elif op == "2":
+            _change_banner_font()
+        elif op == "3":
+            _change_banner_style()
+        elif op == "4":
+            console.print()
+            _preview_banner(BANNER_FONT, BANNER_STYLE, DISPLAY_NAME)
+        else:
+            return
+        console.print()
 
 # ═══════════════════════════════════════════════════════
 def _json_list(data):
@@ -3859,12 +4678,18 @@ def _save_prefs():
         "lang": LANG,
         "favorites": sorted(FAVORITES),
         "konami": KONAMI_UNLOCKED,
+        "menu_anim": MENU_ANIM,
+        "arcade_best": ARCADE_BEST,
     })
 
 
 def preferences_menu():
-    global CURRENT_THEME_IDX, LANG
+    global CURRENT_THEME_IDX, LANG, MENU_ANIM
     col = th()["cat_adv"]
+
+    anim_label = {"auto": "auto (selon le terminal)",
+                  "soft": "forcee (trainee lumineuse)",
+                  "off": "desactivee (menu fixe)"}
 
     t_ui = themed_table(border_style=col)
     t_ui.add_column("Preference", style=col, width=22)
@@ -3872,6 +4697,16 @@ def preferences_menu():
     t_ui.add_row("Theme", th()["name"])
     t_ui.add_row("Langue", "Francais" if LANG == "fr" else "English")
     t_ui.add_row("Pseudo", DISPLAY_NAME)
+    t_ui.add_row("Typo du pseudo", f"{BANNER_FONT} / {BANNER_STYLE}")
+    t_ui.add_row("Animation du menu", anim_label.get(MENU_ANIM, MENU_ANIM))
+    t_ui.add_row("Terminal detecte", esc(_terminal_label()))
+    if _anim_active():
+        t_ui.add_row("Animation reelle", "[green]active[/green]")
+    elif MENU_ANIM == "auto":
+        t_ui.add_row("Animation reelle",
+                     "[yellow]coupee — ce terminal scintille[/yellow]")
+    else:
+        t_ui.add_row("Animation reelle", "[dim]coupee[/dim]")
     t_ui.add_row("Favoris", ", ".join(sorted(FAVORITES)) if FAVORITES else "aucun")
     if KONAMI_UNLOCKED:
         t_ui.add_row("Secret", "[bold bright_magenta]★ debloque[/bold bright_magenta]")
@@ -3881,6 +4716,7 @@ def preferences_menu():
     console.print()
     console.print("  [dim]1[/dim] Choisir un theme        [dim]2[/dim] Ajouter un favori")
     console.print("  [dim]3[/dim] Retirer un favori       [dim]4[/dim] Tout reinitialiser")
+    console.print("  [dim]5[/dim] Animation du menu       [dim]6[/dim] Pseudo & typographie")
     op = console.input(f"\n[{col}]  Choix [dim](vide = retour)[/dim] ❯ [/{col}]").strip()
 
     if op == "1":
@@ -3918,7 +4754,24 @@ def preferences_menu():
         FAVORITES.clear()
         CURRENT_THEME_IDX = THEME_NAMES.index("blue-magic")
         LANG = "fr"
+        MENU_ANIM = "auto"
         success("Preferences reinitialisees.")
+
+    elif op == "5":
+        console.print()
+        for i, mode in enumerate(MENU_ANIM_MODES, 1):
+            marker = "●" if mode == MENU_ANIM else "○"
+            console.print(f"  [dim]{i}[/dim] {marker} {anim_label.get(mode, mode)}")
+        default = MENU_ANIM_MODES.index(MENU_ANIM) + 1
+        pick = ask_int(col, "Animation", default, 1, len(MENU_ANIM_MODES))
+        MENU_ANIM = MENU_ANIM_MODES[pick - 1]
+        success(f"Animation : [bold]{anim_label.get(MENU_ANIM, MENU_ANIM)}[/bold]")
+
+    elif op == "6":
+        console.print()
+        rename_tool()
+        return
+
     else:
         return
 
@@ -5077,6 +5930,234 @@ def listening_ports():
 
 
 # ═══════════════════════════════════════════════════════
+#  BILAN DE SANTE
+# ═══════════════════════════════════════════════════════
+# Chaque controle rend (etiquette, mesure, verdict, poids, conseil). Le verdict
+# vaut 0 (bon), 1 (a surveiller) ou 2 (probleme) ; le score final est la part
+# des points perdus sur le total des poids, ce qui evite qu'un seul controle
+# secondaire fasse chuter la note.
+HEALTH_OK, HEALTH_WARN, HEALTH_BAD = 0, 1, 2
+HEALTH_VERDICTS = {
+    HEALTH_OK:   ("[green]✔ bon[/green]", "green"),
+    HEALTH_WARN: ("[yellow]⚠ a surveiller[/yellow]", "yellow"),
+    HEALTH_BAD:  ("[bold red]✘ probleme[/bold red]", "red"),
+}
+
+
+def _health_cpu():
+    load = psutil.cpu_percent(interval=0.4)
+    verdict = HEALTH_OK if load < 70 else HEALTH_WARN if load < 90 else HEALTH_BAD
+    return ("Charge CPU", f"{load:.0f}%", verdict, 3,
+            "souvent un processus emballe — voir le module 14.")
+
+
+def _health_ram():
+    vm = psutil.virtual_memory()
+    verdict = HEALTH_OK if vm.percent < 75 else HEALTH_WARN if vm.percent < 90 else HEALTH_BAD
+    return ("Memoire vive", f"{vm.percent:.0f}% de {_human(vm.total)}", verdict, 3,
+            "la machine va swapper et ramer — ferme des applications.")
+
+
+def _health_swap():
+    try:
+        sw = psutil.swap_memory()
+    except Exception:
+        return None
+    if not sw.total:
+        return None
+    verdict = HEALTH_OK if sw.percent < 40 else HEALTH_WARN if sw.percent < 75 else HEALTH_BAD
+    return ("Fichier d'echange", f"{sw.percent:.0f}% de {_human(sw.total)}", verdict, 1,
+            "swap tres sollicite : il manque de la RAM physique.")
+
+
+def _health_disks():
+    rows = []
+    for part in psutil.disk_partitions(all=False):
+        if "cdrom" in (part.opts or "") or not part.fstype:
+            continue
+        try:
+            usage = psutil.disk_usage(part.mountpoint)
+        except (PermissionError, OSError):
+            continue
+        verdict = (HEALTH_OK if usage.percent < 80
+                   else HEALTH_WARN if usage.percent < 92 else HEALTH_BAD)
+        rows.append((f"Disque {part.mountpoint}",
+                     f"{usage.percent:.0f}% — {_human(usage.free)} libres",
+                     verdict, 3,
+                     "presque plein — modules 19 (temp) et 49 (gros fichiers)."))
+    return rows
+
+
+def _health_uptime():
+    up = (datetime.now() - datetime.fromtimestamp(psutil.boot_time())).total_seconds()
+    days = up / 86400
+    verdict = HEALTH_OK if days < 7 else HEALTH_WARN if days < 30 else HEALTH_BAD
+    return ("Uptime", _human_duration(up), verdict, 1,
+            "redemarre pour appliquer les mises a jour de securite.")
+
+
+def _health_battery():
+    getter = getattr(psutil, "sensors_battery", None)
+    if not getter:
+        return None
+    try:
+        batt = getter()
+    except Exception:
+        return None
+    if batt is None:
+        return None
+    pct = batt.percent
+    if batt.power_plugged:
+        verdict = HEALTH_OK
+    else:
+        verdict = HEALTH_OK if pct > 40 else HEALTH_WARN if pct > 15 else HEALTH_BAD
+    state = "secteur" if batt.power_plugged else "sur batterie"
+    return ("Batterie", f"{pct:.0f}% ({state})", verdict, 1,
+            "batterie basse sans secteur — branche-toi.")
+
+
+def _health_temperature():
+    getter = getattr(psutil, "sensors_temperatures", None)
+    if not getter:
+        return None
+    try:
+        data = getter() or {}
+    except Exception:
+        return None
+    peaks = [getattr(e, "current", None) for entries in data.values() for e in entries]
+    peaks = [p for p in peaks if isinstance(p, (int, float)) and p > 0]
+    if not peaks:
+        return None
+    hottest = max(peaks)
+    verdict = HEALTH_OK if hottest < 75 else HEALTH_WARN if hottest < 90 else HEALTH_BAD
+    return ("Temperature max", f"{hottest:.0f} °C", verdict, 2,
+            "ca chauffe — verifie ventilation et poussiere.")
+
+
+def _health_processes():
+    count = len(psutil.pids())
+    verdict = HEALTH_OK if count < 350 else HEALTH_WARN if count < 600 else HEALTH_BAD
+    return ("Processus actifs", str(count), verdict, 1,
+            "beaucoup de processus — voir le module 14.")
+
+
+def _health_exposure():
+    try:
+        conns = psutil.net_connections(kind="inet")
+    except (psutil.AccessDenied, PermissionError):
+        return ("Ports exposes", "[dim]droits insuffisants[/dim]", HEALTH_OK, 0,
+                "Relance en administrateur pour auditer les ports en ecoute.")
+    except Exception:
+        return None
+
+    exposed, risky = set(), []
+    for c in conns:
+        if c.status != psutil.CONN_LISTEN:
+            continue
+        ip = getattr(c.laddr, "ip", "")
+        port = getattr(c.laddr, "port", 0)
+        if ip in ("0.0.0.0", "::", ""):
+            exposed.add(port)
+            if port in RISKY_LISTEN_PORTS:
+                risky.append(port)
+
+    if risky:
+        verdict, detail = HEALTH_BAD, f"{len(exposed)} dont {len(set(risky))} sensible(s)"
+    elif len(exposed) > 8:
+        verdict, detail = HEALTH_WARN, f"{len(exposed)} sur toutes interfaces"
+    else:
+        verdict, detail = HEALTH_OK, f"{len(exposed)} sur toutes interfaces"
+    return ("Ports exposes", detail, verdict, 2,
+            "services joignables du reseau — detail au module 64.")
+
+
+def _health_temp_dir():
+    total = 0
+    files = 0
+    root = tempfile.gettempdir()
+    try:
+        with os.scandir(root) as it:
+            for entry in it:
+                files += 1
+                if files > 4000:
+                    break
+                try:
+                    if entry.is_file(follow_symlinks=False):
+                        total += entry.stat(follow_symlinks=False).st_size
+                except OSError:
+                    continue
+    except OSError:
+        return None
+    mo = total / 1048576
+    verdict = HEALTH_OK if mo < 500 else HEALTH_WARN if mo < 2048 else HEALTH_BAD
+    return ("Dossier temporaire", f"{_human(total)} ({files} entrees)", verdict, 1,
+            "temporaire encombre — le module 19 le nettoie.")
+
+
+def health_check():
+    col = th()["cat_mon"]
+    console.print(f"[dim {col}]  Analyse de la machine en cours...[/dim {col}]\n")
+
+    checks = []
+    for probe in (_health_cpu, _health_ram, _health_swap, _health_disks,
+                  _health_temperature, _health_battery, _health_uptime,
+                  _health_processes, _health_exposure, _health_temp_dir):
+        try:
+            result = probe()
+        except Exception:
+            # Un capteur indisponible ne doit pas interrompre le bilan.
+            continue
+        if not result:
+            continue
+        checks.extend(result if isinstance(result, list) else [result])
+
+    if not checks:
+        error("Aucun indicateur n'a pu etre mesure sur cette machine.")
+        return
+
+    LAST_RESULT["title"] = "Bilan de sante"
+    t_ui = themed_table(border_style=col)
+    t_ui.add_column("Controle", style=col, width=22)
+    t_ui.add_column("Mesure", style="bold white", width=32)
+    t_ui.add_column("Verdict", width=18)
+
+    lost = weight_total = 0
+    advice = []
+    for label, measure, verdict, weight, tip in checks:
+        t_ui.add_row(label, measure, HEALTH_VERDICTS[verdict][0])
+        weight_total += weight
+        lost += weight * verdict
+        if verdict != HEALTH_OK and weight:
+            advice.append((verdict, label, tip))
+    console.print(t_ui)
+
+    # Un verdict « probleme » coute deux fois un « a surveiller », d'ou le
+    # denominateur double du total des poids.
+    score = 100 - int(round(lost / max(1, weight_total * 2) * 100))
+    grade, gcol = (("EXCELLENT", "bright_green") if score >= 90 else
+                   ("BON", "green") if score >= 75 else
+                   ("MOYEN", "yellow") if score >= 55 else
+                   ("FRAGILE", "bright_red"))
+
+    console.print()
+    console.print(f"  Sante globale  {pct_bar(score, 24, theme_colors=False)} "
+                  f"[bold {gcol}]{score}/100 — {grade}[/bold {gcol}]")
+
+    ok_count = sum(1 for c in checks if c[2] == HEALTH_OK)
+    info(f"{ok_count}/{len(checks)} controles au vert.")
+
+    if not advice:
+        success("Rien a signaler — la machine est en bonne forme.")
+        return
+
+    console.print()
+    console.print(f"  [{col}]Recommandations[/{col}]")
+    for verdict, label, tip in sorted(advice, key=lambda a: -a[0])[:6]:
+        bullet = "[bold red]![/bold red]" if verdict == HEALTH_BAD else "[yellow]·[/yellow]"
+        console.print(f"   {bullet} [bold]{esc(label)}[/bold] — {esc(tip)}")
+
+
+# ═══════════════════════════════════════════════════════
 #  SECRET
 # ═══════════════════════════════════════════════════════
 
@@ -5131,6 +6212,219 @@ def konami_unlock():
         info("Thème Arcade appliqué — module 27 pour en changer.")
 
 
+class _KeyReader:
+    """Lit le clavier touche par touche, sans attendre la touche Entree.
+
+    Les fleches arrivent en deux morceaux (prefixe puis code sous Windows,
+    sequence ESC ailleurs) : elles sont traduites en jetons <UP>/<DOWN>/... comme
+    dans le menu, pour que le jeu n'ait pas a s'en soucier.
+    """
+
+    def __init__(self):
+        self._saved = None
+        self._fd = None
+
+    def __enter__(self):
+        if os.name != "nt":
+            import termios
+            import tty
+            self._fd = sys.stdin.fileno()
+            self._saved = termios.tcgetattr(self._fd)
+            tty.setcbreak(self._fd)
+        return self
+
+    def __exit__(self, *exc):
+        if self._saved is not None:
+            import termios
+            termios.tcsetattr(self._fd, termios.TCSADRAIN, self._saved)
+        return False
+
+    def read(self) -> str:
+        if os.name == "nt":
+            import msvcrt
+            ch = msvcrt.getwch()
+            if ch in ("\x00", "\xe0"):
+                return _WIN_ARROWS.get(msvcrt.getwch(), "")
+            return ch
+
+        import select
+        ch = sys.stdin.read(1)
+        if ch != "\x1b":
+            return ch
+        seq = ""
+        for _ in range(2):
+            ready, _, _ = select.select([sys.stdin], [], [], 0.05)
+            if not ready:
+                break
+            seq += sys.stdin.read(1)
+        if len(seq) == 2 and seq[0] in ("[", "O"):
+            return _UNIX_ARROWS.get(seq[1], "")
+        return "\x1b"
+
+
+# ── 2048 ──────────────────────────────────────────────────
+TILE_STYLES = {
+    0: "bright_black", 2: "white", 4: "bright_white", 8: "yellow",
+    16: "bright_yellow", 32: "orange1", 64: "bright_red",
+    128: "magenta", 256: "bright_magenta", 512: "cyan",
+    1024: "bright_cyan", 2048: "bright_green",
+}
+
+
+def _g2048_new():
+    grid = [[0] * 4 for _ in range(4)]
+    _g2048_spawn(grid)
+    _g2048_spawn(grid)
+    return grid
+
+
+def _g2048_spawn(grid) -> bool:
+    empty = [(r, c) for r in range(4) for c in range(4) if grid[r][c] == 0]
+    if not empty:
+        return False
+    r, c = secrets.choice(empty)
+    grid[r][c] = 4 if secrets.randbelow(10) == 0 else 2
+    return True
+
+
+def _g2048_slide(row):
+    """Compacte une ligne vers la gauche et fusionne les paires egales."""
+    tiles = [v for v in row if v]
+    out, gained, i = [], 0, 0
+    while i < len(tiles):
+        if i + 1 < len(tiles) and tiles[i] == tiles[i + 1]:
+            merged = tiles[i] * 2
+            out.append(merged)
+            gained += merged
+            i += 2
+        else:
+            out.append(tiles[i])
+            i += 1
+    out += [0] * (4 - len(out))
+    return out, gained
+
+
+def _g2048_move(grid, direction):
+    """Joue un coup. Retourne (nouvelle grille, points, la grille a bouge)."""
+    rows = [list(r) for r in grid]
+    if direction in ("<UP>", "<DOWN>"):
+        rows = [list(col) for col in zip(*rows)]          # travaille en colonnes
+    reverse = direction in ("<RIGHT>", "<DOWN>")
+
+    gained = 0
+    for i, row in enumerate(rows):
+        line = row[::-1] if reverse else row
+        line, points = _g2048_slide(line)
+        rows[i] = line[::-1] if reverse else line
+        gained += points
+
+    if direction in ("<UP>", "<DOWN>"):
+        rows = [list(col) for col in zip(*rows)]
+    return rows, gained, rows != [list(r) for r in grid]
+
+
+def _g2048_can_move(grid) -> bool:
+    for r in range(4):
+        for c in range(4):
+            if grid[r][c] == 0:
+                return True
+            if c < 3 and grid[r][c] == grid[r][c + 1]:
+                return True
+            if r < 3 and grid[r][c] == grid[r + 1][c]:
+                return True
+    return False
+
+
+def _g2048_render(grid, score, best, message=""):
+    col = th()["cat_adv"]
+    table = Table(box=_menu_box(), border_style=col, show_header=False,
+                  padding=(0, 1))
+    for _ in range(4):
+        table.add_column(width=7, justify="center")
+    for row in grid:
+        cells = []
+        for value in row:
+            if value == 0:
+                cells.append(Text("·", style="bright_black"))
+            else:
+                style = TILE_STYLES.get(value, "bright_green")
+                cells.append(Text(str(value), style=f"bold {style}"))
+        table.add_row(*cells)
+
+    header = Text.assemble(
+        ("SCORE ", th()["dim_col"]), (f"{score}", f"bold {th()['accent']}"),
+        ("     RECORD ", th()["dim_col"]), (f"{best}", f"bold {th()['success']}"),
+    )
+    footer = Text("fleches pour jouer · r pour recommencer · q pour quitter",
+                  style=th()["dim_col"])
+
+    parts = [Align.center(header), Text(""), Align.center(table)]
+    if message:
+        parts += [Text(""), Align.center(message)]
+    parts += [Text(""), Align.center(footer)]
+    return Group(*parts)
+
+
+def _game_2048():
+    global ARCADE_BEST
+    if not sys.stdin.isatty():
+        info("Le jeu demande un vrai terminal.")
+        return
+
+    grid = _g2048_new()
+    score, message = 0, ""
+    won = False
+
+    with _KeyReader() as keys:
+        while True:
+            clr()
+            console.print()
+            console.print(Align.center(Text("2 0 4 8", style=f"bold {th()['accent']}")))
+            console.print()
+            console.print(_g2048_render(grid, score, ARCADE_BEST, message))
+
+            key = keys.read()
+            if key in ("q", "Q", "\x1b", "\x03"):
+                break
+            if key in ("r", "R"):
+                grid, score, message, won = _g2048_new(), 0, "", False
+                continue
+            if key not in ("<UP>", "<DOWN>", "<LEFT>", "<RIGHT>"):
+                continue
+
+            grid, gained, moved = _g2048_move(grid, key)
+            if not moved:
+                message = Text("bloque de ce cote", style=th()["warning"])
+                continue
+
+            score += gained
+            if score > ARCADE_BEST:
+                ARCADE_BEST = score
+                _save_prefs()
+
+            _g2048_spawn(grid)
+            message = ""
+
+            if not won and any(v >= 2048 for row in grid for v in row):
+                won = True
+                message = Text("2048 ! continue si tu veux",
+                               style=f"bold {th()['success']}")
+            if not _g2048_can_move(grid):
+                clr()
+                console.print()
+                console.print(_g2048_render(
+                    grid, score, ARCADE_BEST,
+                    Text("PARTIE TERMINEE", style=f"bold {th()['danger']}")))
+                console.print()
+                if console.input("  Rejouer ? [dim][O/n][/dim] ❯ ").strip().lower() in ("", "o", "oui", "y"):
+                    grid, score, message, won = _g2048_new(), 0, "", False
+                else:
+                    break
+
+    console.print()
+    success(f"Score final : [bold]{score}[/bold] — record : [bold]{ARCADE_BEST}[/bold]")
+
+
 def arcade_mode():
     col = "bright_magenta"
     logo = None
@@ -5164,10 +6458,21 @@ def arcade_mode():
     t_ui.add_row("MODULES", f"{modules} debloques")
     t_ui.add_row("FAVORIS", str(len(FAVORITES)))
     t_ui.add_row("THEME", th()["name"])
+    t_ui.add_row("RECORD 2048", f"[bold bright_green]{ARCADE_BEST}[/bold bright_green]"
+                 if ARCADE_BEST else "[dim]jamais joue[/dim]")
     t_ui.add_row("CREDITS", f"{TOOL_NAME} {VERSION}")
     console.print(t_ui)
     console.print()
     console.print(Align.center(Text("★  INSERT COIN  ★", style="bold bright_yellow")))
+    console.print()
+
+    if not sys.stdin.isatty():
+        return
+    choice = console.input(
+        f"  [{col}]Jouer a 2048 ? [dim][O/n][/dim] ❯ [/{col}]"
+    ).strip().lower()
+    if choice in ("", "o", "oui", "y", "yes"):
+        _game_2048()
 
 
 # ── Application des preferences enregistrees ─────────────
@@ -5179,6 +6484,12 @@ if _PREFS.get("theme") in THEME_NAMES:
         CURRENT_THEME_IDX = THEME_NAMES.index(_PREFS["theme"])
 if _PREFS.get("lang") in ("fr", "en"):
     LANG = _PREFS["lang"]
+if _PREFS.get("menu_anim") in MENU_ANIM_MODES:
+    MENU_ANIM = _PREFS["menu_anim"]
+try:
+    ARCADE_BEST = max(0, int(_PREFS.get("arcade_best") or 0))
+except (TypeError, ValueError):
+    ARCADE_BEST = 0
 FAVORITES.update(str(c).zfill(2) for c in (_PREFS.get("favorites") or [])[:12])
 
 
@@ -5256,6 +6567,7 @@ ACTIONS = {
     "62": file_integrity,
     "63": benchmark,
     "64": listening_ports,
+    "65": health_check,
     "99": arcade_mode,
 }
 

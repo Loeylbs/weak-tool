@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/31193046/README.md)
+[README.md](https://github.com/user-attachments/files/31319864/README.md)
 <div align="center">
 
 # weak-tool
@@ -218,6 +218,10 @@ utilisateur :
 - Certains modules (règles de pare-feu, gestionnaire de services, diskpart)
   demandent les droits administrateur et le signalent le cas échéant
 - Aucun réseau n'est contacté sans action explicite de votre part
+
+## Licence
+
+Ce projet est distribué tel quel. Voir le fichier `LICENSE` s'il est présent.
 
 ---
 

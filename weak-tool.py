@@ -297,6 +297,8 @@ PREFS_PATH           = os.path.join(
 )
 FAVORITES            = set()
 ARCADE_BEST          = 0        # meilleur score au 2048 du mode arcade
+HEADLESS             = False    # vrai sous --run : aucun module ne doit attendre
+                                # une touche, sinon le processus se fige
 
 # ── THÈMES ───────────────────────────────────────────────
 THEMES = {
@@ -2178,9 +2180,42 @@ def _animated_menu_input():
         if not _layout_fits() or not _anim_active():
             console.show_cursor(True)
             console.print(body)
+
+            def repaint():
+                _sync_write(_SYNC_BEGIN)
+                try:
+                    clr()
+                    console.print(_menu_frame(cats, width, wide, panel_w,
+                                              phase, typed, layout))
+                finally:
+                    _sync_write(_SYNC_END)
+
+            last_size = (width, _terminal_height())
+            last_check = time.monotonic()
             while True:
                 ch = read_key()
                 if ch is None:
+                    # Sans animation, rien ne redessine le menu de lui-meme :
+                    # il faut surveiller la taille de la fenetre, sinon un
+                    # passage en plein ecran laisse la mise en page compacte
+                    # calculee pour l'ancienne taille. On interroge le systeme
+                    # trois fois par seconde, pas a chaque tour de boucle.
+                    now = time.monotonic()
+                    if now - last_check >= 0.3:
+                        last_check = now
+                        size = (_screen_width(), _terminal_height())
+                        if size != last_size:
+                            last_size = size
+                            width = size[0]
+                            wide = width >= 145
+                            panel_w = 31 if wide else 34
+                            cats = get_cats()
+                            layout = _pick_menu_layout(cats, width, wide,
+                                                       panel_w, typed)
+                            if _layout_fits() and _anim_active():
+                                # La fenetre permet de nouveau l'animation.
+                                return _animated_menu_input()
+                            repaint()
                     time.sleep(0.02)
                     continue
                 if not ch:
@@ -2190,13 +2225,7 @@ def _animated_menu_input():
                     return result
                 if konami_hit:
                     return KONAMI_TRIGGER
-                _sync_write(_SYNC_BEGIN)
-                try:
-                    clr()
-                    console.print(_menu_frame(cats, width, wide, panel_w,
-                                              phase, typed, layout))
-                finally:
-                    _sync_write(_SYNC_END)
+                repaint()
 
         last_clock = ""
         # La banniere fait partie du contenu anime : imprimee avant le Live,
@@ -6367,7 +6396,7 @@ def _g2048_render(grid, score, best, message=""):
 
 def _game_2048():
     global ARCADE_BEST
-    if not sys.stdin.isatty():
+    if HEADLESS or not sys.stdin.isatty():
         info("Le jeu demande un vrai terminal.")
         return
 
@@ -6466,7 +6495,7 @@ def arcade_mode():
     console.print(Align.center(Text("★  INSERT COIN  ★", style="bold bright_yellow")))
     console.print()
 
-    if not sys.stdin.isatty():
+    if HEADLESS or not sys.stdin.isatty():
         return
     choice = console.input(
         f"  [{col}]Jouer a 2048 ? [dim][O/n][/dim] ❯ [/{col}]"
@@ -6739,6 +6768,8 @@ def list_modules():
 
 
 def run_headless(args):
+    global HEADLESS
+    HEADLESS = True
     code = args.run.zfill(2)
     fn = ACTIONS.get(code) or ACTIONS.get(args.run)
     if not fn:

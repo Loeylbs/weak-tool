@@ -1763,9 +1763,27 @@ def _compact_menu_body(cats, width, typed=""):
     return Group(*parts)
 
 
-def _row_panels_width(cats, panel_w) -> int:
-    """Largeur necessaire pour aligner toutes les categories sur une rangee."""
-    return len(cats) * panel_w + (len(cats) - 1) + 2
+# En dessous de cette largeur, un panneau tronque trop de libelles pour rester
+# lisible : on renonce alors a la rangee unique.
+MIN_ROW_PANEL_W = 29
+
+
+def _row_panels_width(cats, panel_w=None) -> int:
+    """Largeur minimale pour aligner toutes les categories sur une rangee."""
+    return len(cats) * MIN_ROW_PANEL_W + (len(cats) - 1) + 2
+
+
+def _row_panel_width(cats, width, panel_w) -> int:
+    """Largeur de chaque panneau en rangee unique.
+
+    Elle se resserre jusqu'a MIN_ROW_PANEL_W pour absorber les quelques
+    colonnes manquantes : une largeur figee faisait rater cette disposition —
+    pourtant la mieux adaptee aux ecrans larges — a un terminal auquel il ne
+    manquait qu'une seule colonne.
+    """
+    n = max(1, len(cats))
+    available = (width - (n - 1) - 2) // n
+    return max(MIN_ROW_PANEL_W, min(panel_w, available))
 
 
 def _panel_menu_parts(cats, width, wide, panel_w, phase, typed="",
@@ -1790,9 +1808,10 @@ def _panel_menu_parts(cats, width, wide, panel_w, phase, typed="",
         parts.append(Align.center(fav_bar))
 
     if single_row:
+        row_w = _row_panel_width(cats, width, panel_w)
         grid = Table.grid(padding=(0, 1))
         grid.add_row(*[
-            _spin_panel_render(*cats[i], panel_w, borders[i], phase, query=typed)
+            _spin_panel_render(*cats[i], row_w, borders[i], phase, query=typed)
             for i in range(len(cats))
         ])
         parts.append(Align.center(grid))
